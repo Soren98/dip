@@ -223,24 +223,28 @@ class OrderSolver:
             elif order_type == 'convoyed_move':
                 destination = extra_info
                 self.convoys[(source, destination)] = set()
+                # armies that are supposed to move via convoy can still move over land if their destination is adjacent,
+                # so add it to move_destinations and related dictionaries as if it were a normal move order.
+                if destination in coast_routes[source]:
+                    # add the unit to move_destination and move_support as if it were a normal attack
+                    if self.move_destinations.get(destination) is None:
+                        self.move_destinations[destination] = set()
+                    self.move_support[(source, destination)] = set()
 
         for source, order_type, extra_info in orders:
             if order_type == 'convoy':
-                if self.convoys.get(extra_info) is None:
-                    # no army to convoy
-                    continue
-                self.convoys[extra_info].add(source)
+                if extra_info in self.convoys.keys():  # check if there's a unit to convoy
+                    self.convoys[extra_info].add(source)
             elif order_type == 'support_hold':  # match supports to holds
-                if self.hold_support.get(extra_info) is None or self.orders_by_territory.get(extra_info, set())\
-                        in {'move', 'convoyed_move'} or self._support_cut(source):
-                    # no unit to support or support cut. it's also illegal to support a moving unit.
-                    continue
-                self.hold_support[extra_info].add(source)
+                # check if there's a unit to support and this unit's support wasn't cut
+                # it's also illegal to support a moving unit
+                if extra_info in self.hold_support.keys() and self.orders_by_territory.get(extra_info, set())\
+                        not in {'move', 'convoyed_move'} and not self._support_cut(source):
+                    self.hold_support[extra_info].add(source)
             elif order_type == 'support_move':  # match supports to moves
-                if self.move_support.get(extra_info) is None or self._support_cut(source):
-                    # no move to support or support cut
-                    continue
-                self.move_support[extra_info].add(source)
+                # check if there's a move to support and this unit's support wasn't cut
+                if extra_info in self.move_support.keys() and not self._support_cut(source):
+                    self.move_support[extra_info].add(source)
 
         # check which armies have a possible path of convoying fleets with which to convoy
         self.convoyed_move_support.clear()
@@ -257,10 +261,13 @@ class OrderSolver:
         # match supports to convoyed moves
         for source, order_type, extra_info in orders:
             if order_type == 'support_convoyed_move':
-                if self.convoyed_move_support.get(extra_info) is None or self._support_cut(source):
-                    # no possibly successful convoy to support or support cut
+                if self._support_cut(source):
                     continue
-                self.convoyed_move_support[extra_info].add(source)
+                if extra_info in self.convoyed_move_support.keys():
+                    self.convoyed_move_support[extra_info].add(source)
+                # convoyed move can act as normal move if its destination is adjacent, so support the normal move too
+                if extra_info in self.move_support.keys():
+                    self.move_support.get(extra_info).add(source)
 
     def _support_cut(self, supporter):
         order_type, extra_info = self.orders_by_territory[supporter]
@@ -374,20 +381,8 @@ class OrderSolver:
         return successful_convoys
 
     def resolve_normal_orders(self, orders):
-        # TODO: add descriptions to resolve_summary
         resolve_summary = []
         self._sort_orders(orders)
-
-        # check if army that's supposed to move by convoy can move to its destination normally
-        for convoy in self.convoys.keys():
-            source, destination = convoy
-            if destination in coast_routes[source]:
-                # add the unit to move_destination and move_support as if it were a normal attack
-                if self.move_destinations.get(destination) is None:
-                    self.move_destinations[destination] = set()
-                self.move_support[(source, destination)] = self.convoyed_move_support[convoy]
-                if self.units_by_terr.get(destination):
-                    self._support_cut(destination)   # cut any support at destination
 
         # check which convoys succeed by checking if each of their convoying fleets is dislodged or not
         # when a convoy succeed, check if it cuts the support at its destination.
@@ -463,15 +458,21 @@ class OrderSolver:
             self.successful_moves.add(s)
         for f in fail:
             self.failed_moves.add(f)
+        for s in self.successful_moves:
+            # units that successfully moved cannot be dislodged
+            # an attacking unit being added to dislodged_units means it would be dislodged if it failed its attack
+            self.dislodged_units.pop(s)
+            resolve_summary.append('{} successfully moved to {}'.format(s, dependency_graph[s]))
+        for f in self.failed_moves:
+            resolve_summary.append('{} failed to moved to {}'.format(f, dependency_graph[f]))
+        for convoy in self.convoys.keys():
+            resolve_summary.append("{}'s convoy to {} was broken".format(*convoy))
 
         # make list of all successful moves for a mass move
         moves = []
         for territory in self.successful_moves:
             destination = self.orders_by_territory[territory].extra_info
             moves.append((territory, destination))
-            # units that successfully moved cannot be dislodged
-            # an attacking unit being added to dislodged_units means it would be dislodged if it failed its attack
-            self.dislodged_units.pop(territory)
         self.mass_move(moves)
         return self.dislodged_units, self.standoffs, resolve_summary
 

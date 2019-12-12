@@ -7,26 +7,32 @@ from ancient_mediterranean import AdministrativeException, AncientMediterranean,
 
 client = Client()
 games = {}
-players = {}
+player_focus = {}  # game with focus
 
 
 async def _valid_channel(channel):
     if isinstance(channel, DMChannel):
         await channel.send('command can only be used in the text channel associated with the game it effects')
     elif str(channel) not in games.keys():
-        await channel.send('there is no game associated with this channel. use !new_game to start one')
+        await channel.send('there is no game associated with this channel. use **!new_game** to start one')
     else:
         return True
     return False
 
 
-async def idk(channel, auth):
+async def _focused(channel, auth):
     if isinstance(channel, DMChannel):
-        pass
-    elif str(channel) not in games.keys():
-        await channel.send('there is no game associated with this channel. use !new_game to start one')
-    elif auth not in players.keys() or str(channel) not in players[auth]:
-        await channel.send("you are not a part of this channel's game")
+        if player_focus.get(auth):
+            if games.get(player_focus[auth]):
+                return True
+            else:
+                await channel.send("the channel you're focused on doesn't have an associated game.\n"
+                                   "start one by using the command **!new_game** in that channel.")
+        else:
+            await channel.send("you aren't focused on any game. use **!focus** to focus on a game")
+    else:
+        await channel.send('this command can only be used in DMs')
+    return False
 
 
 @client.event
@@ -37,10 +43,14 @@ async def on_message(msg):
         return
     print(auth)
     print(channel)
+
+    if isinstance(channel, DMChannel) and auth not in player_focus:
+        player_focus[auth] = None
+
     if msg.content.startswith('!override'):
         try:
             if await _valid_channel(msg.channel):
-                await msg.channel.send(games[channel].override(auth, str(msg.content)[10:].lower()))
+                await msg.channel.send(games[channel].override(auth, str(msg.content)[10:].strip().upper()))
         except AdministrativeException as e:
             await msg.channel.send(str(e))
         return
@@ -65,6 +75,9 @@ async def on_message(msg):
             elif line == '!more_help':
                 await msg.author.send(
                     "**!hello**: to greet the bot\n"
+                    "**!focus** <channel id>: to set your focus on that channel\n"
+                    "your focus determines which game your DM commands affect.\n"
+                    "**!get_focus**: returns the name of the channel you're currently focused on\n"
                     "**!assign** <color>: take control of one of the 5 colors (red, blue, green, black, and yellow)\n"
                     "**!resign**: removes you from the game (your units and supply centers remain unchanged)\n"
                     "**!my_units**: returns a list of your units\n"
@@ -94,22 +107,19 @@ async def on_message(msg):
                     "control of supply centers, respectively")
             elif line == '!hello':
                 await msg.channel.send('Fuck off {}, ya cunt!\n'.format(auth))
-            elif line == '!save':
-                if channel not in games.keys():
-                    await channel.send('there is no game associated with this channel to save')
-                games[channel].save(channel)
-                await msg.channel.send('game state saved')
-            elif line == '!load':
-                games[channel] = AncientMediterranean()
-                games[channel].load(channel)
-                for p in games[channel].get_players():
-                    if p is None:
-                        continue
-                    if p in players.keys():
-                        players[p].add(channel)
+            elif line.startswith('!focus'):
+                if isinstance(msg.channel, DMChannel):
+                    focus_target = str(msg.content)[7:]
+                    if focus_target in games.keys():
+                        player_focus[auth] = focus_target
                     else:
-                        players[p] = {channel}
-                await msg.channel.send('game state loaded')
+                        await channel.send('there is no game associated with that channel.\n'
+                                           'use **!new_game** in a text channel to start one.')
+                else:
+                    await msg.channel.send('focus can only be changed in DMs')
+            elif line.startswith('!get_focus'):
+                if _focused(msg.channel, auth):
+                    await msg.channel.send('focus is currently on {}'.format(player_focus[auth]))
             elif line == '!new_game':
                 if isinstance(channel, DMChannel):
                     await channel.send('a new game cannot be started in a DM channel')
@@ -118,6 +128,18 @@ async def on_message(msg):
                 else:
                     games[channel] = AncientMediterranean()
                     await msg.channel.send('new game started in {}'.format(str(channel)))
+            elif line == '!save':
+                if await _valid_channel(msg.channel):
+                    games[channel].save(channel)
+                    await msg.channel.send('game state saved')
+            elif line == '!load':
+                if isinstance(channel, DMChannel):
+                    await channel.send(
+                        'command can only be used in the text channel associated with the game it effects')
+                else:
+                    games[channel] = AncientMediterranean()
+                    games[channel].load(channel)
+                    await msg.channel.send('game state loaded')
             elif line == '!admin':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].assign_admin(auth))
@@ -133,11 +155,9 @@ async def on_message(msg):
             elif line.startswith('!kick_player'):
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].kick_player(auth, line[13:]))
-                    # remove channel from player's game set
-                    players[auth].remove(channel)
             elif line == '!status':
                 if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].get_num_orders_submitted(auth))
+                    await msg.channel.send(games[channel].orders_status(auth))
             elif line == '!step':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].game_step(auth))
@@ -153,44 +173,49 @@ async def on_message(msg):
             elif line.startswith('!assign'):
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].assign_player(auth, line[8:].lower()))
-                    # add to channel to player's game set
-                    if auth in players.keys():
-                        players[auth].add(channel)
-                    else:
-                        players[auth] = {channel}
             elif line.startswith('!resign'):
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].remove_player(auth))
-                    # remove channel from player's game set
-                    players[auth].remove(channel)
-                    # # this may be necessary
-                    # if len(players[auth]) == 0:
-                    #     players.pop(auth)
-            # TODO: figure out how to figure out which game this is referencing
-            elif isinstance(msg.channel, DMChannel):
-                await msg.channel.send('cant process commands given in DMs rn, sorry')
             elif line == '!my_units':
-                await msg.channel.send(games[channel].get_my_units(auth))
-            elif line == '!all_units':
-                await msg.channel.send(games[channel].get_all_units())
-            elif line == '!my_supply_centers':
-                await msg.channel.send(games[channel].get_my_supply_centers(auth))
-            elif line == '!all_supply_centers':
-                await msg.channel.send(games[channel].get_all_supply_centers())
-            elif line == '!my_orders':
                 if isinstance(msg.channel, DMChannel):
-                    await msg.channel.send(games[channel].get_my_orders(auth))
+                    if _focused(msg.channel, auth):
+                        await msg.channel.send(games[player_focus[auth]].get_my_units(auth))
                 else:
-                    await msg.channel.send('you can only access your orders via DM')
+                    if await _valid_channel(msg.channel):
+                        await msg.channel.send(games[channel].get_my_units(auth))
+            elif line == '!all_units':
+                if isinstance(msg.channel, DMChannel):
+                    if _focused(msg.channel, auth):
+                        await msg.channel.send(games[player_focus[auth]].get_all_units())
+                else:
+                    if await _valid_channel(msg.channel):
+                        await msg.channel.send(games[channel].get_all_units())
+            elif line == '!my_supply_centers':
+                if isinstance(msg.channel, DMChannel):
+                    if _focused(msg.channel, auth):
+                        await msg.channel.send(games[player_focus[auth]].get_my_supply_centers(auth))
+                else:
+                    if await _valid_channel(msg.channel):
+                        await msg.channel.send(games[channel].get_my_supply_centers(auth))
+            elif line == '!all_supply_centers':
+                if isinstance(msg.channel, DMChannel):
+                    if _focused(msg.channel, auth):
+                        await msg.channel.send(games[player_focus[auth]].get_all_supply_centers())
+                else:
+                    if await _valid_channel(msg.channel):
+                        await msg.channel.send(games[channel].get_all_supply_centers())
+            elif line == '!my_orders':
+                if _focused(msg.channel, auth):
+                    await msg.channel.send(games[player_focus[auth]].get_my_orders(auth))
             elif line.startswith('!get'):
-                if isinstance(channel, DMChannel):
-                    await msg.channel.send(games[channel].get_order(auth, line[5:8].upper()))
-                else:
-                    await msg.channel.send('you can only access your orders via DM')
+                if _focused(msg.channel, auth):
+                    await msg.channel.send(games[player_focus[auth]].get_order(auth, line[5:8].upper()))
             elif line.startswith('!reset_orders'):
-                await msg.channel.send(games[channel].reset_orders(auth))
+                if _focused(msg.channel, auth):
+                    await msg.channel.send(games[player_focus[auth]].reset_orders(auth))
             elif line[0:2] in ['A ', 'a ', 'F ', 'f ']:
-                await msg.channel.send(games[channel].add_order(auth, line.strip().upper()))
+                if _focused(msg.channel, auth):
+                    await msg.channel.send(games[player_focus[auth]].add_order(auth, line.strip().upper()))
         except (AdministrativeException, InvalidOrderException, InvalidPlayerException) as e:
             await msg.channel.send(str(e))
 
@@ -207,6 +232,4 @@ assert len(sys.argv) == 2, "must provide only one input, the bot's token"
 TOKEN = sys.argv[1]
 client.run(TOKEN)
 
-# TODO:
-#  ability to generate maps
-#  let players select which game they're submitting orders to via DMs
+# TODO: generate maps after each game step
