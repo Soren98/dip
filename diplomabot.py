@@ -1,8 +1,9 @@
 import sys
 
-from discord import Client, DMChannel, TextChannel
+from discord import Client, DMChannel
 
-from ancient_mediterranean import AncientMediterranean, AdministrativeException, InvalidOrderException, InvalidPlayerException
+from ancient_mediterranean import AdministrativeException, AncientMediterranean, InvalidOrderException, \
+    InvalidPlayerException
 
 client = Client()
 games = {}
@@ -63,7 +64,23 @@ async def on_message(msg):
                                        'you may also type in any orders (one per line) to issue to your units\n'
                                        'example: F Tha S Pun')
             elif line.startswith('!hello'):
-                await msg.channel.send('Fuck off {}, ya cunt!\n'.format(msg.author))
+                await msg.channel.send('Fuck off {}, ya cunt!\n'.format(str(games[channel].get_players())))
+            elif line.startswith('!save'):
+                if channel not in games.keys():
+                    await channel.send('there is no game associated with this channel to save')
+                games[channel].save(channel)
+                await msg.channel.send('game state saved')
+            elif line.startswith('!load'):
+                games[channel] = AncientMediterranean()
+                games[channel].load(channel)
+                for p in games[channel].get_players():
+                    if p is None:
+                        continue
+                    if p in players.keys():
+                        players[p].add(channel)
+                    else:
+                        players[p] = {channel}
+                await msg.channel.send('game state loaded')
             elif line.startswith('!new_game'):
                 if isinstance(channel, DMChannel):
                     await channel.send('a new game cannot be started in a DM channel')

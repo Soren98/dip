@@ -1,5 +1,5 @@
 from copy import deepcopy
-import re
+import re, json
 
 territories = {'GAU', 'RHA', 'SAM', 'VIN', 'ILL', 'LUS', 'ARM', 'GAL', 'DAM', 'ARA', 'CIR', 'SAH', 'PHA', 'MAR', 'SAG',
                'TAR', 'MAS', 'ETU', 'ROM', 'NEA', 'APU', 'RAV', 'VEN', 'DAL', 'EPI', 'ATH', 'SPA', 'MAC', 'BYZ', 'DAC',
@@ -223,6 +223,12 @@ def check_route_dictionaries():
     print(territories_set)  # should be empty
 
 
+def set_default(obj):
+    if isinstance(obj, set):
+        return list(obj)
+    raise TypeError
+
+
 move_regex = re.compile('^([AF]) (\w{3})-(\w{3})$')
 convoyed_move_regex = re.compile('^A (\w{3})-(\w{3}) via convoy$')
 hold_regex = re.compile('^([AF]) (\w{3}) H$')
@@ -260,7 +266,6 @@ class AncientMediterranean:
     admin = None
     players_locked = False
     players = {'red': None, 'blue': None, 'green': None, 'black': None, 'yellow': None}
-    player_set = set()
     units_by_color = {'red': [('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')],
                       'blue': [('F', 'THA'), ('A', 'CIR'), ('A', 'CAR')],
                       'green': [('F', 'SPA'), ('A', 'ATH'), ('A', 'MAC')],
@@ -274,8 +279,6 @@ class AncientMediterranean:
     supply_centers_by_terr = {terr: 'uncontrolled' for terr in supply_center_territories}
     season = 'spring'
     year = 1
-
-    # TODO: write data to file after every command. add restore function for cases when bot needs to be turned off.
 
     def __init__(self):
         # add starting units to units_by_terr
@@ -496,7 +499,7 @@ class AncientMediterranean:
             raise InvalidOrderException("you don't control the unit in the territory".format(territory))
 
     def _interpret_order(self, order, color):
-        print(order)
+        # print(order)
         match_move = move_regex.match(order)
         match_convoyed_move = convoyed_move_regex.match(order)
         match_hold = hold_regex.match(order)
@@ -653,7 +656,6 @@ class AncientMediterranean:
             raise InvalidOrderException('order "{}" not returned as a tuple. yell at soren to fix.'.format(order))
         territory = order[1]
         self.orders[color][territory] = order
-        print(self.orders)
         return read_order(order)
 
     def reset_orders(self, player):
@@ -726,18 +728,17 @@ class AncientMediterranean:
             raise AdministrativeException('players are locked by the admin')
         if not player_regex.match(player):
             raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
-                                         '(yell at soren if you see this)'.format(player))
+                                          '(yell at soren if you see this)'.format(player))
         try:
             c = self.get_color(player)
             if c == color:
                 raise AdministrativeException('you were already assigned that color, you nincompoop')
             raise AdministrativeException('you are already assigned the color {}\n'
-                                         'remove your current color with !resign to claim a new one'.format(c))
+                                          'remove your current color with !resign to claim a new one'.format(c))
         except InvalidPlayerException:
             if color not in self.players.keys():
                 raise AdministrativeException('invalid color: {}'.format(color))
             self.players[color] = player
-            self.player_set.add(player)
             return 'player {} assigned color {}'.format(player, color)
 
     def remove_player(self, player):
@@ -745,11 +746,10 @@ class AncientMediterranean:
             raise AdministrativeException('players are locked by the admin')
         if not player_regex.match(player):
             raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
-                                         '(yell at soren if you see this)'.format(player))
+                                          '(yell at soren if you see this)'.format(player))
         try:
             color = self.get_color(player)
             self.players[color] = None
-            self.player_set.remove(player)
             return 'you have been removed from control of {}'.format(color)
         except InvalidPlayerException:
             raise AdministrativeException(
@@ -758,7 +758,7 @@ class AncientMediterranean:
     def assign_admin(self, player):
         if not player_regex.match(player):
             raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
-                                         '(yell at soren if you see this)'.format(player))
+                                          '(yell at soren if you see this)'.format(player))
         if self.admin is None:
             self.admin = player
             return 'player {} assigned admin powers'.format(player)
@@ -768,7 +768,7 @@ class AncientMediterranean:
     def relinquish_admin(self, player):
         if not player_regex.match(player):
             raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
-                                         '(yell at soren if you see this)'.format(player))
+                                          '(yell at soren if you see this)'.format(player))
         if player != self.admin:
             raise AdministrativeException(
                 "don't try and relinquish admin powers you don't have, dummy. current admin is {}".format(self.admin))
@@ -799,7 +799,25 @@ class AncientMediterranean:
         try:
             color = self.get_color(player)
             self.players[color] = None
-            self.player_set.remove(player)
             return '{} has been removed from control of {}'.format(player, color)
         except InvalidPlayerException:
             raise AdministrativeException('you cant kick a player not assigned a color, moron')
+
+    def get_players(self):
+        return self.players.values()
+
+    def save(self, fp):
+        data = [self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr,
+                self.units_to_retreat, self.orders, self.num_to_build, self.supply_centers_by_color,
+                self.supply_centers_by_terr, self.season, self.year]
+        with open('diplomacy_' + fp + '.json', 'w') as file:
+            json.dump(data, file, default=set_default)
+
+    def load(self, fp):
+        with open('diplomacy_' + fp + '.json', 'r') as file:
+            self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr,\
+            self.units_to_retreat, self.orders, self.num_to_build, self.supply_centers_by_color,\
+            self.supply_centers_by_terr, self.season, self.year = json.load(file)
+            for color in self.units_to_retreat.keys():
+                self.units_to_retreat[color] = set(self.units_to_retreat[color])
+                self.supply_centers_by_color[color] = set(self.supply_centers_by_color[color])

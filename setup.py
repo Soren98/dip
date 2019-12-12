@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='dip',
-    version='0.2',
+    version='0.3',
     packages=['dip'],
     url='https://github.com/Soren98/dip',
     license='Unlicense',
