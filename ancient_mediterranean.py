@@ -252,7 +252,7 @@ valid_seasons = ['spring', 'spring_retreat', 'fall', 'fall_retreat', 'build']
 
 def read_order(order):
     order_str = [order.source, order.order_type]
-    if order.order_type in {'move', 'convoyed_move', 'support_hold', 'build', 'disband'}:
+    if order.order_type in {'move', 'convoyed_move', 'support_hold', 'build'}:
         order_str.append(order.extra_info)
     elif order.order_type in {'convoy', 'support_move', 'support_convoyed_move'}:
         order_str.append(order.extra_info[0])
@@ -289,13 +289,14 @@ class InvalidPlayerException(Exception):
 class AncientMediterranean:
     def __init__(self, load_path=None):
         self.admin = None
+        self.colors = {'red', 'blue', 'green', 'black', 'yellow'}
         self.players_locked = False
         self.players = {'red': None, 'blue': None, 'green': None, 'black': None, 'yellow': None}
-        self.units_by_color = {'red': [('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')],  # (unit type, territory)
-                               'blue': [('F', 'THA'), ('A', 'CIR'), ('A', 'CAR')],
-                               'green': [('F', 'SPA'), ('A', 'ATH'), ('A', 'MAC')],
-                               'black': [('F', 'SID'), ('A', 'ANT'), ('A', 'DAM')],
-                               'yellow': [('F', 'ALE'), ('A', 'MEM'), ('A', 'THE')]}
+        self.units_by_color = {'red': {('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')},  # (unit type, territory)
+                               'blue': {('F', 'THA'), ('A', 'CIR'), ('A', 'CAR')},
+                               'green': {('F', 'SPA'), ('A', 'ATH'), ('A', 'MAC')},
+                               'black': {('F', 'SID'), ('A', 'ANT'), ('A', 'DAM')},
+                               'yellow': {('F', 'ALE'), ('A', 'MEM'), ('A', 'THE')}}
         self.units_by_terr = {}  # (unit type, color)
         self.retreating_units = {'red': {}, 'blue': {}, 'green': {}, 'black': {},
                                  'yellow': {}}  # (dislodging_unit, unit_type)
@@ -306,30 +307,31 @@ class AncientMediterranean:
         self.season = 'spring'
         self.year = 1
         self.standoffs = set()
-        # add starting units to units_by_terr
-        for color in self.units_by_color.keys():
-            for unit in self.units_by_color[color]:
-                self.units_by_terr[unit[1]] = (unit[0], color)
-        # add starting supply centers to supply_centers_by_terr
-        for color in self.supply_centers_by_color.keys():
-            for sc in self.supply_centers_by_color[color]:
-                self.supply_centers_by_terr[sc] = color
-        self.order_resolver = OrderSolver(self.units_by_color, self.units_by_terr)
         if load_path:
             self.load(load_path)
+        else:
+            # add starting units to units_by_terr
+            for color in self.colors:
+                for unit in self.units_by_color[color]:
+                    self.units_by_terr[unit[1]] = (unit[0], color)
+            # add starting supply centers to supply_centers_by_terr
+            for color in self.colors:
+                for sc in self.supply_centers_by_color[color]:
+                    self.supply_centers_by_terr[sc] = color
+        self.order_resolver = OrderSolver(self.units_by_color, self.units_by_terr)
 
     def _season_step(self, retreat):
         if self.season == 'build':
             self.season = 'spring'
             self.year += 1
         elif self.season == 'spring':
+            self.season = 'fall'
             if retreat:
                 self.season = 'spring_retreat'
-            self.season = 'fall'
         elif self.season == 'fall':
+            self.season = 'build'
             if retreat:
                 self.season = 'fall_retreat'
-            self.season = 'build'
         elif self.season == 'spring_retreat':
             self.season = 'fall'
         elif self.season == 'fall_retreat':
@@ -337,16 +339,16 @@ class AncientMediterranean:
         else:
             raise Exception('illegal season state {}\n'
                             'valid seasons are {}'.format(self.season, valid_seasons))
-        return self.season + ' ' + str(self.year)
+        return self.season + ' ' + str(self.year).zfill(2)
 
     def status(self):
-        ret_str = []
+        ret_str = ['{} {}'.format(self.season, str(self.year).zfill(2))]
         if self.season in {'spring', 'fall'}:
-            for color in self.units_by_color.keys():
+            for color in self.colors:
                 ret_str.append('{}: {} units, {} orders submitted'.format(color, len(self.units_by_color[color]),
                                                                           len(self.orders[color])))
         elif self.season in {'spring_retreat', 'fall_retreat'}:
-            for color in self.retreating_units.keys():
+            for color in self.colors:
                 ret_str.append('{}: {} units retreating, {} orders submitted'
                                .format(color, str(len(self.retreating_units[color])), len(self.orders[color])))
         elif self.season == 'build':
@@ -361,72 +363,97 @@ class AncientMediterranean:
             return 'no status detected. yell at soren.'
         return '\n'.join(ret_str)
 
-    def _flatten_orders(self):
+    def _flatten_normal_orders(self):
         flat = set()
-        for color in self.orders.keys():
-            for territory, order in self.orders[color]:
+        for color in self.colors:
+            for order in self.orders[color].values():
                 flat.add(order)
         return flat
 
-    def game_step(self, admin):
+    def _flatten_retreat_orders(self):
+        flat = set()
+        for color in self.colors:
+            for order in self.orders[color].values():
+                source, order_type, extra_info = order
+                _, unit_type = self.retreating_units[color][source]
+                new_order = (source, order_type, extra_info, color, unit_type)
+                flat.add(new_order)
+        return flat
+
+    def game_step(self, admin, fp):
         if admin != self.admin:
             raise AdministrativeException("you aren't admin, imbecile")
-        overview = ['overview of {} {}'.format(self.season, self.year)]
+        overview = ['overview of {} {}'.format(self.season, str(self.year).zfill(2))]
         # list out orders
-        for color in self.orders.keys():
-            for territory in self.orders[color]:
-                overview.append(read_order(self.orders[color][territory]))
+        for color in self.colors:  # TODO: make each player's orders appear in one line like color: order order order...
+            overview.append(
+                '{}: {}'.format(color, ', '.join([read_order(order) for order in self.orders[color].values()])))
         retreat = False
         if self.season in {'spring', 'fall'}:
             # move units to new territories and resolve conflicts
-            dislodged_units, standoffs, summary = self.order_resolver.resolve_normal_orders(self._flatten_orders())
+            dislodged_units, standoffs, summary = self.order_resolver.resolve_normal_orders(
+                self._flatten_normal_orders())
             overview += summary
-            # add dislodged units to retreating units
-            for dislodged_unit in dislodged_units.key():
-                retreat = True
-                dislodging_unit, unit_type, color = dislodged_units[dislodged_unit]
-                self.retreating_units[color][dislodged_unit] = (dislodging_unit, unit_type)
-                overview.append('{} must order {} to retreat or disband'.format(color, dislodged_unit))
+            self.standoffs.clear()
             for territory in standoffs:
+                self.standoffs.add(territory)
                 overview.append('standoff occurred in {}'.format(territory))
+            # add dislodged units to retreating units
+            for color in self.colors:
+                self.retreating_units[color].clear()
+            for dislodged_unit in dislodged_units.keys():
+                dislodging_unit, unit_type, color = dislodged_units[dislodged_unit]
+                if self._anywhere_to_retreat(dislodged_unit, dislodging_unit, unit_type):
+                    retreat = True
+                    self.retreating_units[color][dislodged_unit] = (dislodging_unit, unit_type)
+                    overview.append('{} must order {} to retreat or disband'.format(color, dislodged_unit))
+                else:
+                    self.order_resolver.remove_unit(dislodged_unit)
+                    overview.append('{} {} in {} was dislodged, but has no possible paths of retreat, '
+                                    'so it was disbanded.'.format(color, unit_type, dislodged_unit))
         elif self.season in {'spring_retreat', 'fall_retreat'}:
-            overview += self.order_resolver.resolve_retreat_orders(self._flatten_orders())
+            overview += self.order_resolver.resolve_retreat_orders(self._flatten_retreat_orders())
             # reset retreating_units
             for units in self.retreating_units.values():
                 units.clear()
         elif self.season == 'build':
             # add new and remove extra units
-            overview += self.order_resolver.build_disband(self._flatten_orders())
+            overview += self.order_resolver.build_disband(self.orders)
 
-        if self.season in {'fall', 'fall_retreat'}:
+        if (self.season == 'fall' and not retreat) or self.season == 'fall_retreat':
             # determine change in supply centers
             overview += self._update_supply_centers()
             # check if any player controls 18
             overview += self._check_for_winner()
             # calculate number of units to build or disband
-            for color in self.units_by_color.keys():
-                num_builds = len(self.supply_centers_by_color[color]) - len(self.units_by_color[color])
+            for color in self.colors:
+                num_supply_centers = len(self.supply_centers_by_color[color])
+                num_units = len(self.units_by_color[color])
+                num_builds = num_supply_centers - num_units
                 self.num_to_build[color] = num_builds
                 if num_builds < 0:
-                    overview.append('{}: {} units to disband'.format(color, abs(num_builds)))
+                    overview.append('{}: {} units to disband ({} supply centers {} units)'
+                                    .format(color, abs(num_builds), num_supply_centers, num_units))
                 else:
-                    overview.append('{}: {} units to build'.format(color, num_builds))
+                    overview.append('{}: {} units to build ({} supply centers {} units)'
+                                    .format(color, num_builds, num_supply_centers, num_units))
 
         # reset orders
         for order_dict in self.orders.values():
             order_dict.clear()
         self._season_step(retreat)
+        self.save(fp)
         overview.append('game state saved')
-        overview.append('next phase is {} {}'.format(self.season, self.year))
+        overview.append('next phase is {} {}'.format(self.season, str(self.year).zfill(2)))
         return '\n'.join(overview)
 
     def _update_supply_centers(self):
         # loop through each color's units and check if they took control of uncontrolled supply centers
         # or another player's supply centers
         summary = []
-        for color in self.units_by_color.keys():
+        for color in self.colors:
             for unit in self.units_by_color[color]:
-                territory = unit[0]
+                territory = unit[1]
                 if territory not in supply_center_territories:
                     continue
                 old_color = self.supply_centers_by_terr[territory]
@@ -447,15 +474,15 @@ class AncientMediterranean:
             if len(self.supply_centers_by_color[c]) >= 18:
                 winner = c
                 win_str.append('{} wins!!!'.format(self.players[winner]))
-                for color in self.units_by_color.keys():
+                for color in self.colors:
                     if color != winner:
                         win_str.append('{} is a pathetic loser'.format(self.players[color]))
         return win_str
 
-    def _unit_occupying(self, territory):
+    def _unit_occupying(self, territory):  # return self.units_by_terr.get(territory, [None])[0]
         if self.units_by_terr.get(territory):
-            return None
-        return self.units_by_terr[territory][0]
+            return self.units_by_terr[territory][0]
+        return None
 
     def _convoy_possible(self, source, destination):
         if source not in territories:
@@ -478,7 +505,24 @@ class AncientMediterranean:
                 if adj in seas and adj not in checked:
                     checked.add(adj)
                     if self._unit_occupying(adj) == 'F':
-                        stack += adj
+                        stack.append(adj)
+        return False
+
+    def _anywhere_to_retreat(self, dislodged_unit, dislodging_unit, unit_type):
+        # check all adjacent territories to see if the dislodged unit has any territory it can retreat to.
+        # it cannot retreat to the territory that the unit that dislodged it attacked from, a territory where a
+        # standoff took place, or an occupied territory.
+        for adj in coast_routes.get(dislodged_unit, set()):
+            if adj != dislodging_unit and adj not in self.standoffs and self.units_by_terr.get(adj) is None:
+                return True
+        if unit_type == 'A':
+            for adj in land_routes[dislodged_unit]:
+                if adj != dislodging_unit and adj not in self.standoffs and self.units_by_terr.get(adj) is None:
+                    return True
+        elif unit_type == 'F':
+            for adj in sea_routes[dislodged_unit]:
+                if adj != dislodging_unit and adj not in self.standoffs and self.units_by_terr.get(adj) is None:
+                    return True
         return False
 
     def _retreat_possible(self, source, destination, color):
@@ -592,7 +636,7 @@ class AncientMediterranean:
         if self.season == 'spring_retreat' or self.season == 'fall_retreat':
             # disband
             if match_disband:
-                unit_type, territory = match_move.groups()
+                unit_type, territory = match_disband.groups()
                 self._check_retreat(territory, unit_type, color)
                 return Order(territory, 'disband', None)
 
@@ -617,8 +661,8 @@ class AncientMediterranean:
 
         # convoyed_move
         if match_convoyed_move:
-            unit_type, source, destination = match_convoyed_move.groups()
-            self._check_ownership(source, unit_type, color)
+            source, destination = match_convoyed_move.groups()
+            self._check_ownership(source, 'A', color)
             if not self._convoy_possible(source, destination):
                 raise InvalidOrderException(
                     'there is no possible route via fleets at sea to convoy {} to {}'.format(source, destination))
@@ -701,6 +745,7 @@ class AncientMediterranean:
     def reset_orders(self, player):
         color = self.get_color(player)
         self.orders[color].clear()
+        return 'orders reset'
 
     def get_order(self, player, territory):
         if territory not in territories:
@@ -710,7 +755,7 @@ class AncientMediterranean:
         _, color = self.units_by_terr[territory]
         if color != self.get_color(player):
             raise AdministrativeException("you don't control a unit in this territory, dork")
-        if territory not in self.orders[color]:
+        if territory not in self.orders[color].keys():
             return '{} no order issued'.format(territory)
         return read_order(self.orders[color][territory])
 
@@ -719,8 +764,9 @@ class AncientMediterranean:
         order_descriptions = []
         if self.season in {'spring', 'fall'}:
             for unit_type, territory in self.units_by_color[color]:
-                if territory in self.orders[color]:
-                    order_descriptions.append(read_order(self.orders[color][territory]))
+                order = self.orders[color].get(territory)
+                if order:
+                    order_descriptions.append(read_order(order))
                 else:
                     order_descriptions.append('{} in {} no order issued'.format(unit_type, territory))
             if not order_descriptions:
@@ -728,8 +774,9 @@ class AncientMediterranean:
         elif self.season in {'spring_retreat', 'fall_retreat'}:
             for units in self.retreating_units[color]:
                 for unit in units.keys():
-                    if unit in self.orders[color]:
-                        order_descriptions.append(read_order(self.orders[color][unit]))
+                    order = self.orders[color].get(unit)
+                    if order:
+                        order_descriptions.append(read_order(order))
                     else:
                         _, unit_type = units[unit]
                         order_descriptions.append('{} in {} no order issued'.format(unit_type, unit))
@@ -774,7 +821,7 @@ class AncientMediterranean:
         s = []
         for color, supply_centers in self.supply_centers_by_color.items():
             s.append('{}: {} - {}'.format(color, len(self.supply_centers_by_color[color]),
-                                                         ' '.join(self.supply_centers_by_color[color])))
+                                          ' '.join(self.supply_centers_by_color[color])))
         if not s:
             return 'no supply centers found (soren fucked up)'
         return '\n'.join(s)
@@ -873,13 +920,30 @@ class AncientMediterranean:
 
     def load(self, fp):
         with open(fp, 'r') as file:
-            self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr, \
-            self.retreating_units, self.orders, self.num_to_build, supply_centers_by_color, \
-            self.supply_centers_by_terr, self.season, self.year, standoffs = json.load(file)
-            for color in self.supply_centers_by_color.keys():
+            self.admin, self.players_locked, self.players, units_by_color, units_by_terr, retreating_units, orders, \
+            self.num_to_build, supply_centers_by_color, self.supply_centers_by_terr, self.season, self.year, \
+            standoffs = json.load(file)
+            # json only stores lists and dictionaries. other data structures need to be adjusted manually.
+            self.units_by_terr.clear()
+            for color in self.colors:
+                # convert units from lists to tuples
+                self.units_by_color[color].clear()
+                for unit in units_by_color[color]:
+                    self.units_by_color[color].add(tuple(unit))
+                    self.units_by_terr[unit[1]] = (unit[0], color)
+                # convert retreating units from lists to tuples
+                self.retreating_units[color].clear()
+                for territory, info in retreating_units[color].items():
+                    self.retreating_units[color][territory] = tuple(info)
+                # supply centers requires sets
                 self.supply_centers_by_color[color] = set(supply_centers_by_color[color])
+                # convert orders from lists to Order namedtuple
+                self.orders[color].clear()
+                for territory, order in orders[color].items():
+                    if isinstance(order[2], list):
+                        order[2] = tuple(order[2])
+                    self.orders[color][territory] = Order(*order)
             self.standoffs = set(standoffs)
-            self.order_resolver.update_unit_dicts(self.units_by_color, self.units_by_terr)
 
     def override(self, admin, orders):
         if admin != self.admin:
@@ -1043,6 +1107,6 @@ class AncientMediterranean:
     def clear_orders(self, admin):
         if admin != self.admin:
             raise AdministrativeException('need admin powers to clear all orders')
-        for color in self.orders.keys():
+        for color in self.colors:
             self.orders[color].clear()
         return 'all orders cleared'

@@ -6,6 +6,7 @@ from discord import Client, DMChannel
 
 from ancient_mediterranean import AdministrativeException, AncientMediterranean, InvalidOrderException, \
     InvalidPlayerException
+from cleanup import register_exit_fun
 
 client = Client()
 games = {}
@@ -13,54 +14,49 @@ game_save_folder = 'game_saves'
 player_focus = {}  # game with focus
 
 
-async def _valid_channel(channel):
+def _valid_channel(channel):
     if isinstance(channel, DMChannel):
-        await channel.send('command can only be used in the text channel associated with the game it effects')
+        return 'command can only be used in the text channel associated with the game it effects'
     elif str(channel) not in games.keys():
-        await channel.send('there is no game associated with this channel. use **!new_game** to start one')
+        return 'there is no game associated with this channel. use **!new_game** to start one'
     else:
-        return True
-    return False
+        return None
 
 
-async def _focused(channel, author):
+def _focused(channel, author):
     if isinstance(channel, DMChannel):
         if player_focus.get(author.id):
             if games.get(player_focus[author.id]):
-                return True
+                return None
             else:
-                await channel.send("the channel you're focused on doesn't have an associated game.\n"
-                                   "start one by using the command **!new_game** in that channel.")
+                return "the channel you're focused on doesn't have an associated game. start one by using the " \
+                       "command **!new_game** in that channel."
         else:
-            await channel.send("you aren't focused on any game. use **!focus** to focus on a game")
+            return "you aren't focused on any game. use **!focus** to focus on a game"
     else:
-        await channel.send('this command can only be used in DMs')
-    return False
+        return 'this command can only be used in DMs'
 
 
-async def _check_both(channel, author):
+def _check_both(channel, author):
     if isinstance(channel, DMChannel):
         if player_focus.get(author.id):
             if games.get(player_focus[author.id]):
-                return games[player_focus[author.id]]
+                return games[player_focus[author.id]], None
             else:
-                await channel.send("the channel you're focused on doesn't have an associated game.\n"
-                                   "start one by using the command **!new_game** in that channel.")
+                return None, "the channel you're focused on doesn't have an associated game. start one by using the " \
+                       "command **!new_game** in that channel."
         else:
-            await channel.send("you aren't focused on any game. use **!focus** to focus on a game")
+            return None, "you aren't focused on any game. use **!focus** to focus on a game"
     elif str(channel) not in games.keys():
-        await channel.send('there is no game associated with this channel. use **!new_game** to start one')
+        return None, 'there is no game associated with this channel. use **!new_game** to start one'
     else:
-        return games[channel]
-    return None
+        return games[str(channel)], None
 
 
 @client.event
 async def on_message(msg):
     if msg.author == client.user:
         return
-    a = games
-    b = client
     auth = msg.author
     channel = str(msg.channel)
     print(str(auth))
@@ -68,18 +64,22 @@ async def on_message(msg):
 
     if msg.content.startswith('!override'):
         try:
-            if await _valid_channel(msg.channel):
+            error_msg = _valid_channel(msg.channel)
+            if error_msg:
+                await msg.channel.send(error_msg)
+            else:
                 await msg.channel.send(games[channel].override(str(auth), str(msg.content)[10:]))
         except AdministrativeException as e:
             await msg.channel.send(str(e))
         return
+    replies = []
     for line in str(msg.content).splitlines():
         line = line.strip().lower()
         try:
             if line == '!help':
                 await auth.send(
-                    "before trying to send orders, focus on a game and assign yourself to a color."
-                    "instructions in **!more_help**\n"
+                    "before trying to send orders, focus on a game and assign yourself to a color. instructions in "
+                    "**!more_help**\n"
                     "orders are any line that start with an a or f of the form:\n"
                     "**f aaa-bbb** for a move from aaa to bbb\n"
                     "**a ccc-ddd via convoy** for a convoyed move from ccc to ddd\n"
@@ -153,86 +153,136 @@ async def on_message(msg):
                     for c in client.get_all_channels():
                         if focus_target == c.name:
                             player_focus[auth.id] = focus_target
-                            await auth.send('focusing on {}'.format(focus_target))
+                            replies.append('focusing on {}'.format(focus_target))
                             break
                     else:
-                        await auth.send('no channel named {} to focus on'.format(focus_target))
+                        replies.append('no channel named {} to focus on'.format(focus_target))
                 else:
-                    await msg.channel.send('focusing on {}'.format(channel))
+                    replies.append('focusing on {}'.format(channel))
             elif line.startswith('!get_focus'):
                 if player_focus.get(auth.id):
-                    await msg.channel.send('focus is currently on {}'.format(player_focus[auth.id]))
+                    replies.append('focus is currently on {}'.format(player_focus[auth.id]))
             elif line == '!new_game':
                 if isinstance(channel, DMChannel):
-                    await channel.send('a new game cannot be started in a DM channel')
+                    replies.append('a new game cannot be started in a DM channel')
                 elif games.get(channel):
-                    await msg.channel.send("can't start a new game in a channel with a running game")
+                    replies.append("can't start a new game in a channel with a running game")
                 else:
                     games[channel] = AncientMediterranean()
-                    await msg.channel.send('new game started in {}'.format(channel))
+                    replies.append('new game started in {}'.format(channel))
             elif line == '!admin':
-                if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].assign_admin(str(auth)))
+                error_msg = _valid_channel(msg.channel)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[channel].assign_admin(str(auth)))
             elif line == '!relinquish_admin':
-                if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].relinquish_admin(str(auth)))
+                error_msg = _valid_channel(msg.channel)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[channel].relinquish_admin(str(auth)))
             elif line == '!lock_players':
-                if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].lock_players(str(auth)))
+                error_msg = _valid_channel(msg.channel)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[channel].lock_players(str(auth)))
             elif line == '!unlock_players':
-                if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].unlock_players(str(auth)))
+                error_msg = _valid_channel(msg.channel)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[channel].unlock_players(str(auth)))
             elif line.startswith('!kick_player'):
-                if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].kick_player(str(auth), line[13:]))
+                error_msg = _valid_channel(msg.channel)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[channel].kick_player(str(auth), line[13:]))
             elif line == '!step':
-                if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].game_step(str(auth)))
+                error_msg = _valid_channel(msg.channel)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    save_path = game_save_folder + '/' + channel + '.json'
+                    replies.append(games[channel].game_step(str(auth), save_path))
             elif line == '!clear_orders':
-                if await _valid_channel(msg.channel):
-                    await msg.channel.send(games[channel].clear_orders(str(auth)))
+                error_msg = _valid_channel(msg.channel)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[channel].clear_orders(str(auth)))
             elif line.startswith('!assign'):
-                game = await _check_both(msg.channel, auth)
-                if game:
-                    await msg.channel.send(game.assign_player(str(auth), line[8:].lower()))
+                game, error_msg = _check_both(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                elif game:
+                    replies.append(game.assign_player(str(auth), line[8:].lower()))
             elif line.startswith('!resign'):
-                game = await _check_both(msg.channel, auth)
-                if game:
-                    await msg.channel.send(game.resign(str(auth)))
+                game, error_msg = _check_both(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                elif game:
+                    replies.append(game.remove_player(str(auth)))
             elif line == '!status':
-                game = await _check_both(msg.channel, auth)
-                if game:
-                    await msg.channel.send(game.status())
+                game, error_msg = _check_both(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                elif game:
+                    replies.append(game.status())
             elif line == '!my_units':
-                game = await _check_both(msg.channel, auth)
-                if game:
-                    await msg.channel.send(game.get_my_units(str(auth)))
+                game, error_msg = _check_both(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                elif game:
+                    replies.append(game.get_my_units(str(auth)))
             elif line == '!all_units':
-                game = await _check_both(msg.channel, auth)
-                if game:
-                    await msg.channel.send(game.get_all_units())
+                game, error_msg = _check_both(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                elif game:
+                    replies.append(game.get_all_units())
             elif line == '!my_supply_centers':
-                game = await _check_both(msg.channel, auth)
-                if game:
-                    await msg.channel.send(game.get_my_supply_centers(str(auth)))
+                game, error_msg = _check_both(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                elif game:
+                    replies.append(game.get_my_supply_centers(str(auth)))
             elif line == '!all_supply_centers':
-                game = await _check_both(msg.channel, auth)
-                if game:
-                    await msg.channel.send(game.get_all_supply_centers())
+                game, error_msg = _check_both(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                elif game:
+                    replies.append(game.get_all_supply_centers())
             elif line == '!my_orders':
-                if await _focused(msg.channel, auth):
-                    await auth.send(games[player_focus[auth.id]].get_my_orders(str(auth)))
+                error_msg = _focused(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[player_focus[auth.id]].get_my_orders(str(auth)))
             elif line.startswith('!get'):
-                if await _focused(msg.channel, auth):
-                    await auth.send(games[player_focus[auth.id]].get_order(str(auth), line[5:].upper()))
+                error_msg = _focused(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[player_focus[auth.id]].get_order(str(auth), line[5:].upper()))
             elif line == '!reset_orders':
-                if await _focused(msg.channel, auth):
-                    await auth.send(games[player_focus[auth.id]].reset_orders(str(auth)))
+                error_msg = _focused(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[player_focus[auth.id]].reset_orders(str(auth)))
             elif line[0:2] in {'a ', 'f '}:
-                if await _focused(msg.channel, auth):
-                    await auth.send(games[player_focus[auth.id]].add_order(str(auth), line))
+                error_msg = _focused(msg.channel, auth)
+                if error_msg:
+                    replies.append(error_msg)
+                else:
+                    replies.append(games[player_focus[auth.id]].add_order(str(auth), line))
         except (AdministrativeException, InvalidOrderException, InvalidPlayerException) as e:
-            await msg.channel.send(str(e))
+            replies.append(str(e))
+    if replies:
+        await msg.channel.send('\n'.join(replies))
 
 
 @client.event
@@ -257,21 +307,21 @@ async def on_ready():
 
 
 def cleanup():
-    cleanup_msg = ['saved player focuses', 'saved games:']
+    print('\nsaved player focuses')
     with open('player_focus.json', 'w') as file:
         json.dump(player_focus, file)
+    games_saved_msg = ['saved games:']
     for channel, game in games.items():
-        cleanup_msg.append(channel)
+        games_saved_msg.append(channel)
         game.save(game_save_folder + '/' + channel + '.json')
-    print('\n'.join(cleanup_msg))
+    print('\n'.join(games_saved_msg))
 
+
+register_exit_fun(cleanup)
 
 assert len(sys.argv) == 2, "must provide only one input, the bot's token"
 TOKEN = sys.argv[1]
-try:
-    client.run(TOKEN)
-except KeyboardInterrupt:
-    cleanup()
+client.run(TOKEN)
 
 # TODO: generate maps after each game step
 #  add command to turn off or reset bot which changes its online status

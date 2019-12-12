@@ -113,7 +113,7 @@ sea_routes = {'IBE': ['SAG', 'BER', 'MAU'],
 def _convoy_possible(convoy, convoying_fleets):
     source, destination = convoy
     stack = [source]
-    checked = set()
+    checked = {source}
     while stack:
         cur = stack.pop()
         for adj in sea_routes[cur]:
@@ -121,7 +121,7 @@ def _convoy_possible(convoy, convoying_fleets):
                 return True
             if adj in convoying_fleets and adj not in checked:
                 checked.add(adj)
-                stack += adj
+                stack.append(adj)
     return False
 
 
@@ -151,9 +151,9 @@ def _find_cycles_and_border_clashes(dependencies, convoyed_moves):
                             cycles.add(cycle)
                             break
                     else:
-                        border_clashes.add(cycle)
+                        border_clashes.add(tuple(cycle))
                 else:
-                    cycles.add(cycle)
+                    cycles.add(tuple(cycle))
                 break
             if cur_source is None or cur_source in checked:
                 break
@@ -185,10 +185,10 @@ class OrderSolver:
         unit_type, color = self.units_by_terr.pop(source)
         self.units_by_terr[destination] = (unit_type, color)
         self.units_by_color[color].remove((unit_type, source))
-        self.units_by_color[color].append((unit_type, destination))
+        self.units_by_color[color].add((unit_type, destination))
 
     def add_unit(self, color, unit_type, territory):
-        self.units_by_color[color].append((unit_type, territory))
+        self.units_by_color[color].add((unit_type, territory))
         self.units_by_terr[territory] = (unit_type, color)
 
     def remove_unit(self, territory):
@@ -243,7 +243,7 @@ class OrderSolver:
                     summary.append("{}'s support cut".format(source))
                     continue
                 # check if there's a unit to support. it's also illegal to support a moving unit
-                if extra_info in self.hold_support.keys() and self.orders_by_territory.get(extra_info, set())\
+                if extra_info in self.hold_support.keys() and self.orders_by_territory.get(extra_info, [None])[0]\
                         not in {'move', 'convoyed_move'}:
                     self.hold_support[extra_info].add(source)
             elif order_type == 'support_move':  # match supports to moves
@@ -312,20 +312,20 @@ class OrderSolver:
         # make list of attackers and their force to sort
         attacking_forces = []
         for attacker in self.move_destinations.get(territory, set()):
-            attacking_forces.append((len(self.move_support[attacker]) + 1, attacker))
+            attacking_forces.append((len(self.move_support[(attacker, territory)]) + 1, attacker))
         # determine whether each attack succeeds, fails, or may succeed
         if len(attacking_forces) == 1:
             attacker = attacking_forces[0][1]
             if self.units_by_terr.get(territory) is None:
                 # lone attacker always moves into an unoccupied territory
-                self.successful_moves.add((attacker, territory))
+                self.successful_moves.add(attacker)
                 return attacker
             elif self._attack_dislodges(attacker, self.move_support[(attacker, territory)], territory,
-                                        self.hold_support[territory]):
+                                        self.hold_support.get(territory, set())):
                 self.dislodged_units[territory] = (attacker, *self.units_by_terr[territory])
                 self.successful_moves.add(attacker)
                 return attacker
-            elif self.orders_by_territory.get(territory) == 'move':
+            elif self.orders_by_territory.get(territory, [None])[0] == 'move':
                 # attacker able to move in if the unit in territory successfully moves out
                 self.dependent_moves.add(attacker)
             else:
@@ -335,17 +335,17 @@ class OrderSolver:
             strongest = sorted_attackers[0][1]
             second_strongest = sorted_attackers[1][1]
             for attacker in sorted_attackers[1:]:
-                self.failed_moves.add(attacker)
+                self.failed_moves.add(attacker[1])
             if self._attack_dislodges(strongest, self.move_support[(strongest, territory)], second_strongest,
                                       self.move_support[(second_strongest, territory)]):
                 if self.units_by_terr.get(territory) is None:
                     self.successful_moves.add(strongest)
                     return strongest
                 elif self._attack_dislodges(strongest, self.move_support[(strongest, territory)], territory,
-                                            self.hold_support[territory]):
+                                            self.hold_support.get(territory, set())):
                     self.dislodged_units[territory] = (strongest, *self.units_by_terr[territory])
                     self.successful_moves.add(strongest)
-                elif self.orders_by_territory.get(territory) == 'move':
+                elif self.orders_by_territory.get(territory, [None])[0] == 'move':
                     # strongest able to move in if the unit in territory successfully moves out
                     self.dependent_moves.add(strongest)
                 return strongest
@@ -371,7 +371,7 @@ class OrderSolver:
         dependencies = {}
         for destination in self.move_destinations.keys():
             for source in self.move_destinations[destination]:
-                if self.orders_by_territory[destination] == 'move':
+                if self.orders_by_territory.get(destination, [None])[0] == 'move':
                     dependencies[source] = destination
                 else:
                     dependencies[source] = None
@@ -410,6 +410,7 @@ class OrderSolver:
                 # add the successful convoy to move_destination and move_support as if it were a normal attack
                 if self.move_destinations.get(destination) is None:
                     self.move_destinations[destination] = set()
+                self.move_destinations[destination].add(source)
                 self.move_support[(source, destination)] = self.convoyed_move_support[convoy]
                 # check if the newly successful convoy cuts any support given by a unit at its destination
                 if self.units_by_terr.get(destination) is not None and self._support_cut(destination):
@@ -473,17 +474,17 @@ class OrderSolver:
         for s in self.successful_moves:
             # units that successfully moved cannot be dislodged
             # an attacking unit being added to dislodged_units means it would be dislodged if it failed its attack
-            self.dislodged_units.pop(s)
-            resolve_summary.append('{} successfully moved to {}'.format(s, dependency_graph[s]))
+            self.dislodged_units.pop(s, None)
+            resolve_summary.append('{} successfully moved to {}'.format(s, self.orders_by_territory[s][1]))
         for f in self.failed_moves:
-            resolve_summary.append('{} failed to moved to {}'.format(f, dependency_graph[f]))
+            resolve_summary.append('{} failed to moved to {}'.format(f, self.orders_by_territory[f][1]))
         for convoy in self.convoys.keys():
             resolve_summary.append("{}'s convoy to {} was broken".format(*convoy))
 
         # make list of all successful moves for a mass move
         moves = []
         for territory in self.successful_moves:
-            destination = self.orders_by_territory[territory].extra_info
+            destination = self.orders_by_territory[territory][1]
             moves.append((territory, destination))
         self.mass_move(moves)
         return self.dislodged_units, self.standoffs, resolve_summary
@@ -491,45 +492,43 @@ class OrderSolver:
     def resolve_retreat_orders(self, orders):
         order_summary = []
         self.move_destinations.clear()
-        for source, order_type, extra_info in orders:
+        for source, order_type, extra_info, color, unit_type in orders:
             if order_type == 'move':
                 # make dictionary of territories that units retreat to to check for conflicts
                 destination = extra_info
                 if self.move_destinations.get(destination) is None:
                     self.move_destinations[destination] = set()
-                self.move_destinations[destination].add(source)
+                self.move_destinations[destination].add((source, color, unit_type))
             elif order_type == 'disband':
-                # remove disbanded units immediately
-                unit_type, color = self.units_by_terr(source)
+                # nothing needs to be done to disband a retreating unit since retreating units aren't part of the game
+                # state
                 order_summary.append('{} {} in {} disbanded'.format(color, unit_type, source))
-                self.remove_unit(source)
         for destination in self.move_destinations.keys():
             # if only one unit retreats to a territory, move it
             if len(self.move_destinations[destination]) == 1:
-                source = self.move_destinations[destination][0]
-                color, unit_type = self.units_by_terr[source]
+                source, color, unit_type = self.move_destinations[destination][0]
                 order_summary.append('{} {} retreated from {} to {}'.format(color, unit_type, source, destination))
-                self.move_unit(source, destination)
+                # add unit because retreating units aren't part of the normal game state, so they can't be moved
+                self.add_unit(color, unit_type, destination)
             else:
-                # if multiple units retreat to the same territory, they get disbanded
-                for source in self.move_destinations[destination]:
-                    color, unit_type = self.units_by_terr[source]
+                # if multiple units retreat to the same territory, they get disbanded. nothing needs to be done to
+                # disband a retreating unit since retreating units aren't part of the game state.
+                for source, color, unit_type in self.move_destinations[destination]:
                     order_summary.append('{} {} retreated from {} to {}, but was disbanded due to multiple units'
                                          'retreating to that territory'.format(color, unit_type, source, destination))
-                    self.remove_unit(source)
         return order_summary
 
     def build_disband(self, orders):
         # add or remove units corresponding to each color's build and disband orders
         summary = []
-        for territory, order_type, unit_type in orders:
-            _, color = self.units_by_terr(territory)
-            if order_type == 'build':
-                summary.append('{] built {} at {}'.format(color, unit_type, territory))
-                self.add_unit(color, unit_type, territory)
-            elif order_type == 'disband':
-                summary.append('{] disbanded {} at {}'.format(color, unit_type, territory))
-                self.remove_unit(territory)
-            else:
-                print('illegal order {} {} {} during build phase'.format(territory, order_type, unit_type))
+        for color in orders.keys():
+            for territory, order_type, unit_type in orders[color].values():
+                if order_type == 'build':
+                    summary.append('{} built {} at {}'.format(color, unit_type, territory))
+                    self.add_unit(color, unit_type, territory)
+                elif order_type == 'disband':
+                    summary.append('{} disbanded {} at {}'.format(color, unit_type, territory))
+                    self.remove_unit(territory)
+                else:
+                    print('illegal order {} {} {} during build phase'.format(territory, order_type, unit_type))
         return summary
