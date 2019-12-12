@@ -244,7 +244,7 @@ def read_order(order):
     return order
 
 
-class InvalidPlayerException(Exception):
+class AdministrativeException(Exception):
     pass
 
 
@@ -252,10 +252,15 @@ class InvalidOrderException(Exception):
     pass
 
 
+class InvalidPlayerException(Exception):
+    pass
+
+
 class AncientMediterranean:
     admin = None
     players_locked = False
     players = {'red': None, 'blue': None, 'green': None, 'black': None, 'yellow': None}
+    player_set = set()
     units_by_color = {'red': [('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')],
                       'blue': [('F', 'THA'), ('A', 'CIR'), ('A', 'CAR')],
                       'green': [('F', 'SPA'), ('A', 'ATH'), ('A', 'MAC')],
@@ -267,13 +272,17 @@ class AncientMediterranean:
     num_to_build = {'red': 0, 'blue': 0, 'green': 0, 'black': 0, 'yellow': 0}
     supply_centers_by_color = deepcopy(starting_supply_centers)
     supply_centers_by_terr = {terr: 'uncontrolled' for terr in supply_center_territories}
-    year = 1
     season = 'spring'
+    year = 1
 
-    # TODO: set up git repo
+    # TODO: write data to file after every command. add restore function for cases when bot needs to be turned off.
 
     def __init__(self):
-        self._generate_units_by_terr()
+        # add starting units to units_by_terr
+        for color in self.units_by_color.keys():
+            for unit in self.units_by_color[color]:
+                self.units_by_terr[unit[1]] = (unit[0], color)
+        # add starting supply centers to supply_centers_by_terr
         for color in self.supply_centers_by_color.keys():
             for sc in self.supply_centers_by_color[color]:
                 self.supply_centers_by_terr[sc] = color
@@ -295,82 +304,123 @@ class AncientMediterranean:
         elif self.season == 'fall_retreat':
             self.season = 'build'
         else:
-            # TODO: maybe make a more descriptively named exception like IllegalSeasonException
             raise Exception('illegal season state {}'.format(self.season))
         return self.season + ' ' + str(self.year)
 
-    def _game_step(self):
-        # TODO: finish game cycle
-        # TODO: control update function with discord bot and return messages like declaring winner or current game state
+    def get_num_orders_submitted(self, admin_name):
+        if admin_name != self.admin:
+            raise AdministrativeException("you aren't admin, doofus")
+        ret_str = []
+        for color in self.units_by_color.keys():
+            ret_str.append(color + ': ' + str(len(self.units_by_color[color])) + ' units '
+                           + str(len(self.orders[color])) + ' orders submitted')
+        return '\n'.join(ret_str)
+
+    def game_step(self, admin_name):
+        if admin_name != self.admin:
+            raise AdministrativeException("you aren't admin, imbecile")
+        overview = ['overview of ' + self.season + ' ' + str(self.year)]
         retreat = False
         if self.season == 'build':
-            # add new units and remove extra
-            self._build_disband()
-        elif self.season == 'spring':
+            # add new and remove extra units
+            overview += self._build_disband()
+        elif self.season in ['spring', 'fall']:
             # move units to new territories and resolve conflicts
-            # determine if a retreat phase is necessary
-            pass
-        elif self.season == 'fall':
-            # move units to new territories and resolve conflicts
-            # determine if a retreat phase is necessary
+            order_summary = self._resolve_normal_orders()
+            overview += order_summary
+            # determine if retreat phase is needed
+            for color in self.units_to_retreat.keys():
+                if len(self.units_to_retreat[color]) > 0:
+                    retreat = True
+                    break
+            # inform players of dislodged units
+            if retreat:
+                for color in self.units_to_retreat.keys():
+                    if self.units_to_retreat[color]:
+                        overview.append(color + ' must order '
+                                        + ", ".join(self.units_to_retreat[color]) + ' to retreat or disband')
+        elif self.season in ['spring_retreat', 'fall_retreat']:
+            overview += self._resolve_retreat_orders()
+            self.units_to_retreat = {'red': set(), 'blue': set(), 'green': set(), 'black': set(), 'yellow': set()}
+
+        if self.season in ['fall', 'fall_retreat']:
             # determine change in supply centers
-            self._update_supply_centers()
+            overview += self._update_supply_centers()
             # check if any player controls 18
-            self._check_for_winner()
-            # calculate number of builds or disband orders needed
-            pass
-        elif self.season == 'spring_retreat':
-            pass
-        elif self.season == 'fall_retreat':
-            pass
+            overview += self._check_for_winner()
+            # calculate number of units to build or disband
+            for color in self.units_by_color.keys():
+                num_builds = len(self.supply_centers_by_color[color]) - len(self.units_by_color[color])
+                if num_builds < 0:
+                    overview.append(color + ': ' + str(num_builds) + ' units to disband')
+                else:
+                    overview.append(color + ': ' + str(num_builds) + ' units to build')
+
         # reset orders
         self.orders = {'red': {}, 'blue': {}, 'green': {}, 'black': {}, 'yellow': {}}
-        self.units_to_retreat = {'red': set(), 'blue': set(), 'green': set(), 'black': set(), 'yellow': set()}
-        self._generate_units_by_terr()
         self._season_step(retreat)
+        overview.append('next phase is ' + self.season + ' ' + str(self.year))
+        return '\n'.join(overview)
 
-    def _retreat(self):
+    def _resolve_normal_orders(self):
+        # TODO: resolve normal orders and generate units_to_retreat and some info for use in retreat phase
+        order_summary = []
+        return order_summary
+
+    def _resolve_retreat_orders(self):
         # TODO: resolve retreat orders
-        pass
+        order_summary = []
+        return order_summary
 
     def _build_disband(self):
+        # add or remove units corresponding to each color's build and disband orders
+        summary = []
         for color in self.orders.keys():
             for order in self.orders[color]:
                 _, territory, order_type, unit_type = order
                 if order_type == 'build':
+                    summary += color + ' built ' + unit_type + ' at ' + territory
                     self.units_by_color[color] += (unit_type, territory)
                     self.units_by_terr[territory] = (unit_type, color)
                 elif order_type == 'disband':
+                    summary += color + ' disbanded ' + unit_type + ' at ' + territory
                     self.units_by_color[color].remove((unit_type, territory))
                     self.units_by_terr.pop(territory)
                 else:
-                    raise Exception('illegal order {} during build phase'.format(order))
+                    print('illegal order {} during build phase'.format(order))
+        return summary
 
     def _update_supply_centers(self):
+        # loop through each color's units and check if they took control of uncontrolled supply centers
+        # or another player's supply centers
+        summary = []
         for color in self.units_by_color.keys():
             for unit in self.units_by_color[color]:
                 terr = unit[1]
-                if self.supply_centers_by_terr[terr] != 'uncontrolled':
-                    self.supply_centers_by_color[color].remove(terr)
+                if terr not in supply_center_territories:
+                    continue
+                old_color = self.supply_centers_by_terr[terr]
+                if old_color == color:
+                    continue
+                elif old_color == 'uncontrolled':
+                    summary += color + ' gained control of the uncontrolled supply center at ' + terr
+                elif old_color != color:
+                    summary += color + ' stole the supply center at ' + terr + ' from ' + old_color
+                    self.supply_centers_by_color[old_color].remove(terr)
                 self.supply_centers_by_terr[terr] = color
                 self.supply_centers_by_color[color].add(terr)
-
-    def _generate_units_by_terr(self):
-        self.units_by_terr.clear()
-        for color in self.units_by_color.keys():
-            for unit in self.units_by_color[color]:
-                self.units_by_terr[unit[1]] = (unit[0], color)
+        return summary
 
     def _check_for_winner(self):
+        win_str = []
         for c in self.supply_centers_by_color.keys():
             if len(self.supply_centers_by_color[c]) >= 18:
                 winner = c
-                win_str = '{} wins!!!'.format(self.players[winner])
+                win_str += '{} wins!!!'.format(self.players[winner])
                 for color in self.units_by_color.keys():
                     if color != winner:
-                        win_str += '\n{} is a pathetic loser'.format(self.players[color])
-                return win_str
-        return None
+                        win_str += '{} is a pathetic loser'.format(self.players[color])
+        return win_str
 
     def _unit_occupying(self, territory):
         if territory not in self.units_by_terr.keys():
@@ -417,14 +467,14 @@ class AncientMediterranean:
         unit_type = self._unit_occupying(source)
         if unit_type == 'A':
             if destination in seas:
-                raise InvalidOrderException('armies cannot move to sea territories')
+                raise InvalidOrderException("armies can't move to sea territories")
             if source not in land_routes.keys():
                 raise InvalidOrderException('army not on land. yell at soren')
             if destination not in land_routes[source]:
                 raise InvalidOrderException('{} and {} are not adjacent'.format(source, destination))
         elif unit_type == 'F':
             if destination in inlands:
-                raise InvalidOrderException('fleets cannot move to inland territories')
+                raise InvalidOrderException("fleets can't move to inland territories")
             if source not in sea_routes.keys():
                 raise InvalidOrderException('fleet not on coast or in seas. yell at soren')
             if destination not in sea_routes[source]:
@@ -443,7 +493,7 @@ class AncientMediterranean:
             raise InvalidOrderException(
                 'the unit in territory {} was ordered as {} but is {}'.format(territory, unit_type, unit[0]))
         if color != unit[1]:
-            raise InvalidOrderException('you do not control the unit in the territory'.format(territory))
+            raise InvalidOrderException("you don't control the unit in the territory".format(territory))
 
     def _interpret_order(self, order, color):
         print(order)
@@ -462,18 +512,18 @@ class AncientMediterranean:
             if match_build:
                 unit_type, territory = match_build.groups()
                 if territory not in self.supply_centers_by_color[color]:
-                    raise InvalidOrderException('you cannot build at {}, you do not control it'.format(territory))
+                    raise InvalidOrderException("you can't build at {}, you don't control it".format(territory))
                 if territory not in starting_supply_centers[color]:
                     raise InvalidOrderException(
-                        'you cannot build at {}, it is not one of your starting supply centers'.format(territory))
+                        "you can't build at {}, it is not one of your starting supply centers".format(territory))
                 if unit_type == 'F' and territory not in coast_routes.keys():
                     raise InvalidOrderException(
-                        'you cannot build a fleet at the inland supply center {}'.format(territory))
+                        "you can't build a fleet at the inland supply center {}".format(territory))
                 if territory in self.orders[color].keys() or len(self.orders[color]) < self.num_to_build[color]:
                     return color, territory, 'build', unit_type
                 raise InvalidOrderException(
-                    'you already reached your number of builds for this turn\n'
-                    'reset your orders with !reset_orders to change your builds')
+                    'you already reached your number of builds, {}, for this turn\n'
+                    'reset your orders with !reset_orders to change your builds'.format(self.num_to_build[color]))
 
             # disband
             if match_disband:
@@ -482,8 +532,8 @@ class AncientMediterranean:
                 if -len(self.orders[color]) > self.num_to_build[color]:
                     return color, territory, 'disband', unit_type
                 raise InvalidOrderException(
-                    'you have already reached your number of disbands for this turn\n'
-                    'reset your orders with !reset_orders to change your disbands')
+                    'you have already reached your number of disbands, {}, for this turn\n'
+                    'reset your orders with !reset_orders to change your disbands'.format(self.num_to_build[color]))
 
             if match_move or match_convoyed_move or match_hold or match_convoy or match_support_hold or match_support_move or match_support_convoyed_move:
                 raise InvalidOrderException('only build and disband orders are allowed during build phase')
@@ -597,42 +647,30 @@ class AncientMediterranean:
         raise InvalidPlayerException('invalid player {}. assign color before issuing orders'.format(player))
 
     def add_order(self, player, order):
-        try:
-            color = self.get_color(player)
-            order = self._interpret_order(order, color)
-        except (InvalidPlayerException, InvalidOrderException) as e:
-            return str(e)
+        color = self.get_color(player)
+        order = self._interpret_order(order, color)
         if not isinstance(order, tuple):
-            return 'order "{}" not returned as a tuple. yell at soren to fix.'.format(order)
+            raise InvalidOrderException('order "{}" not returned as a tuple. yell at soren to fix.'.format(order))
         territory = order[1]
         self.orders[color][territory] = order
         print(self.orders)
         return read_order(order)
 
     def reset_orders(self, player):
-        try:
-            color = self.get_color(player)
-        except InvalidPlayerException as e:
-            return str(e)
+        color = self.get_color(player)
         self.orders[color] = {}
 
     def get_order(self, player, territory):
-        try:
-            color = self.get_color(player)
-        except InvalidPlayerException as e:
-            return str(e)
+        color = self.get_color(player)
         if territory not in self.orders[color]:
             for unit in self.units_by_color[color]:
                 if unit[1] == territory:
                     return '{} no order issued'.format(territory)
-            return 'you dont control a unit in this territory, dork'
+            return "you don't control a unit in this territory, dork"
         return read_order(self.orders[color][territory])
 
     def get_my_orders(self, player):
-        try:
-            color = self.get_color(player)
-        except InvalidPlayerException as e:
-            return str(e)
+        color = self.get_color(player)
         orders_str = ''
         for unit in self.units_by_color[color]:
             unit_terr = unit[1]
@@ -641,19 +679,16 @@ class AncientMediterranean:
             else:
                 orders_str += unit[1] + ' no order issued' + '\n'
         if orders_str == '':
-            orders_str = 'you dont have any units to order, fool.'
+            return "you don't have any units to order, fool."
         return orders_str
 
     def get_my_units(self, player):
-        try:
-            color = self.get_color(player)
-        except InvalidPlayerException as e:
-            return str(e)
+        color = self.get_color(player)
         units_str = ''
         for unit in self.units_by_color[color]:
             units_str += unit[0] + ' ' + unit[1] + '\n'
         if units_str == '':
-            units_str = 'you dont have any units, loser.'
+            return "you don't have any units, loser."
         return units_str
 
     def get_all_units(self):
@@ -662,7 +697,7 @@ class AncientMediterranean:
             for unit in self.units_by_color[color]:
                 units_str += color + ' ' + unit[0] + ' ' + unit[1] + '\n'
         if units_str == '':
-            units_str = 'no units found (soren fucked up)'
+            return 'no units found (soren fucked up)'
         return units_str
 
     def get_my_supply_centers(self, player):
@@ -674,7 +709,7 @@ class AncientMediterranean:
         for sc in self.supply_centers_by_color[color]:
             s += sc + '\n'
         if s == '':
-            s = 'you dont have any supply centers, stupid.'
+            return "you don't have any supply centers, stupid."
         return s
 
     def get_all_supply_centers(self):
@@ -683,81 +718,88 @@ class AncientMediterranean:
             for sc in self.supply_centers_by_color[color]:
                 s += color + ' ' + sc + '\n'
         if s == '':
-            s = 'no supply centers found (soren fucked up)'
+            return 'no supply centers found (soren fucked up)'
         return s
 
     def assign_player(self, player, color):
         if self.players_locked:
-            return 'players are locked by the admin'
+            raise AdministrativeException('players are locked by the admin')
         if not player_regex.match(player):
-            return 'invalid player {} must be of form AAAAA#0000\n' \
-                   '(yell at soren if you see this)'.format(player)
+            raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
+                                         '(yell at soren if you see this)'.format(player))
         try:
             c = self.get_color(player)
             if c == color:
-                return 'you were already assigned that color, you nincompoop'
-            return 'you are already assigned the color {}\n' \
-                   'remove your current color with !resign to claim a new one'.format(c)
+                raise AdministrativeException('you were already assigned that color, you nincompoop')
+            raise AdministrativeException('you are already assigned the color {}\n'
+                                         'remove your current color with !resign to claim a new one'.format(c))
         except InvalidPlayerException:
             if color not in self.players.keys():
-                return 'invalid color: {}'.format(color)
+                raise AdministrativeException('invalid color: {}'.format(color))
             self.players[color] = player
+            self.player_set.add(player)
             return 'player {} assigned color {}'.format(player, color)
 
     def remove_player(self, player):
         if self.players_locked:
-            return 'players are locked by the admin'
+            raise AdministrativeException('players are locked by the admin')
         if not player_regex.match(player):
-            return 'invalid player {} must be of form AAAAA#0000\n' \
-                   '(yell at soren if you see this)'.format(player)
+            raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
+                                         '(yell at soren if you see this)'.format(player))
         try:
             color = self.get_color(player)
             self.players[color] = None
+            self.player_set.remove(player)
             return 'you have been removed from control of {}'.format(color)
         except InvalidPlayerException:
-            return 'why are you trying to resign when you didnt control a color in the first place, you nitwit'
+            raise AdministrativeException(
+                'why are you trying to resign when you didnt control a color in the first place, you nitwit?')
 
     def assign_admin(self, player):
         if not player_regex.match(player):
-            return 'invalid player {} must be of form AAAAA#0000\n' \
-                   '(yell at soren if you see this)'.format(player)
+            raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
+                                         '(yell at soren if you see this)'.format(player))
         if self.admin is None:
             self.admin = player
             return 'player {} assigned admin powers'.format(player)
-        return 'cannot assign admin powers until {} relinquishes admin powers with !relinquish_admin'.format(self.admin)
+        raise AdministrativeException(
+            'cannot assign admin powers until {} relinquishes admin powers with !relinquish_admin'.format(self.admin))
 
     def relinquish_admin(self, player):
         if not player_regex.match(player):
-            return 'invalid player {} must be of form AAAAA#0000\n' \
-                   '(yell at soren if you see this)'.format(player)
+            raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
+                                         '(yell at soren if you see this)'.format(player))
         if player != self.admin:
-            return 'dont try and relinquish admin powers you dont have, dummy. current admin is {}'.format(self.admin)
+            raise AdministrativeException(
+                "don't try and relinquish admin powers you don't have, dummy. current admin is {}".format(self.admin))
+        self.admin = None
+        msg = 'your admin powers have been relinquished.'
         if self.players_locked:
             self.players_locked = False
-            self.admin = None
-            return 'your admin powers have been relinquished. players unlocked.'
-        self.admin = None
-        return 'your admin powers have been relinquished'
+            msg += ' players unlocked.'
+        return msg
 
     def lock_players(self, player):
         if player != self.admin:
-            return 'locking players requires admin powers'
+            raise AdministrativeException('locking players requires admin powers')
         self.players_locked = True
         return 'players locked'
 
     def unlock_players(self, player):
         if player != self.admin:
-            return 'unlocking players requires admin powers'
+            raise AdministrativeException('unlocking players requires admin powers')
         self.players_locked = False
         return 'players unlocked'
 
     def kick_player(self, admin_name, player):
         if admin_name != self.admin:
-            return 'you arent admin, imbecile'
+            raise AdministrativeException("you aren't admin, imbecile")
         if not player_regex.match(player):
-            return 'invalid player {} must be of form AAAAA#0000\n'.format(player)
+            raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'.format(player))
         try:
             color = self.get_color(player)
+            self.players[color] = None
+            self.player_set.remove(player)
+            return '{} has been removed from control of {}'.format(player, color)
         except InvalidPlayerException:
-            return 'you cant kick a player not assigned a color, moron'
-        return 'player {} kicked from {}'.format(player, color)
+            raise AdministrativeException('you cant kick a player not assigned a color, moron')
