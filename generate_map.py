@@ -16,6 +16,29 @@ supply_center_bounding_boxes = {'DAL': (240, 48, 328, 136), 'VIN': (231, 0, 271,
                                 'LEP': (216, 284, 328, 343), 'CIR': (120, 227, 181, 296), 'DAM': (543, 144, 611, 224),
                                 'SIP': (480, 88, 584, 143)}
 
+supply_center_bounding_boxes2 = {'DAL': (240, 48, 328, 136), 'VIN': (231, 0, 271, 64), 'SIC': (224, 192, 272, 221),
+                                 'CAR': (136, 200, 215, 240), 'JER': (527, 248, 551, 287), 'ALE': (384, 281, 494, 328),
+                                 'THE': (488, 283, 580, 392), 'NEA': (274, 336, 312, 384), 'MEM': (394, 299, 512, 367),
+                                 'BYZ': (392, 120, 456, 168), 'SAG': (0, 153, 88, 207), 'NUM': (160, 256, 240, 296),
+                                 'CYR': (320, 272, 408, 336), 'MAC': (331, 119, 406, 176), 'SID': (528, 199, 568, 232),
+                                 'THA': (160, 225, 215, 270), 'PET': (530, 281, 574, 325), 'BAL': (97, 145, 132, 174),
+                                 'CRE': (380, 225, 424, 247), 'ROM': (256, 312, 288, 344), 'ATH': (328, 160, 384, 200),
+                                 'SPA': (56, 264, 168, 360), 'MAS': (96, 56, 184, 112), 'RAV': (209, 72, 255, 118),
+                                 'SAD': (176, 138, 200, 184), 'ANT': (528, 163, 568, 208), 'TYE': (532, 224, 560, 253),
+                                 'CYP': (456, 216, 512, 242), 'MIL': (400, 160, 464, 208), 'CHE': (375, 0, 612, 104),
+                                 'LEP': (216, 284, 328, 343), 'CIR': (120, 227, 181, 296), 'DAM': (543, 144, 611, 224),
+                                 'SIP': (480, 88, 584, 143), 'BRE': (112, 200, 176, 248), 'BUL': (362, 296, 432, 336),
+                                 'CON': (392, 312, 472, 360), 'SER': (336, 288, 375, 344), 'HOL': (208, 176, 246, 208),
+                                 'MAR': (147, 256, 216, 304), 'STP': (360, 0, 611, 168), 'WAR': (321, 192, 384, 232),
+                                 'BER': (267, 176, 312, 216), 'TRI': (280, 256, 343, 328), 'EDI': (160, 91, 190, 144),
+                                 'RUM': (362, 240, 435, 304), 'KIE': (232, 168, 280, 224), 'POR': (40, 280, 88, 336),
+                                 'TUN': (192, 368, 231, 398), 'BUD': (312, 240, 399, 296), 'SWE': (281, 41, 344, 168),
+                                 'DEN': (248, 136, 296, 176), 'MOS': (368, 48, 612, 239), 'VIE': (288, 232, 334, 263),
+                                 'ANK': (464, 296, 535, 352), 'SMY': (400, 321, 543, 392), 'LVP': (144, 120, 176, 166),
+                                 'LON': (160, 160, 199, 192), 'PAR': (160, 216, 208, 263), 'BEL': (186, 184, 224, 216),
+                                 'GRE': (338, 330, 391, 391), 'VEN': (240, 264, 288, 336), 'NOR': (241, 16, 376, 135),
+                                 'MUN': (218, 208, 280, 256), 'SEV': (418, 184, 612, 304)}
+
 # the RGB values of the different colors
 palette = {
     'red': (196, 143, 133),
@@ -104,6 +127,90 @@ unit_xys = {'GAU': (108, 31),
             'REE': (546, 330),
             'BAL': (98, 146)}
 
+palette2 = {
+    'red': (196, 143, 133),
+    'pink': (239, 196, 228),
+    'blue': (121, 175, 198),
+    'brown': (160, 138, 117),
+    'green': (164, 196, 153),
+    'black': (168, 126, 159),
+    'yellow': (234, 234, 175)}
+unit_xys2 = {'PAR': (173, 233),
+             'BUR': (203, 228),
+             'RUH': (229, 206),
+             'SIL': (308, 212),
+             'WAR': (360, 204),
+             'MOS': (451, 157),
+             'UKR': (414, 226),
+             'MUN': (253, 223),
+             'BOH': (283, 223),
+             'GAL': (365, 230),
+             'TYR': (274, 249),
+             'VIE': (296, 247),
+             'BUD': (344, 269),
+             'SER': (350, 309),
+             'CLY': (154, 107),
+             'EDI': (171, 107),
+             'YOR': (175, 147),
+             'LON': (183, 165),
+             'WAL': (150, 167),
+             'LVP': (158, 135),
+             'STP': (431, 108),  # nc (433, 58) sc (380, 128)
+             'NOR': (259, 102),
+             'SWE': (301, 134),
+             'FIN': (363, 75),
+             'LVN': (372, 154),
+             'PRU': (331, 186),
+             'BER': (292, 186),
+             'KIE': (252, 192),
+             'DEN': (259, 150),
+             'HOL': (223, 188),
+             'BEL': (208, 198),
+             'PIC': (175, 205),
+             'BRE': (147, 229),
+             'GAS': (141, 275),
+             'SPA': (107, 298),  # nc (80, 270) sc (102, 335)
+             'POR': (4, 315),
+             'MAR': (194, 273),
+             'PIE': (223, 272),
+             'TUS': (248, 302),
+             'ROM': (266, 328),
+             'NEA': (290, 355),
+             'APU': (294, 330),
+             'VEN': (251, 281),
+             'TRI': (299, 273),
+             'ALB': (337, 329),
+             'GRE': (354, 347),
+             'BUL': (392, 308),  # nc (415, 299) sc (393, 323)
+             'CON': (423, 339),
+             'SMY': (485, 348),
+             'SYR': (534, 355),
+             'ANK': (474, 312),
+             'ARM': (561, 308),
+             'SEV': (471, 238),
+             'RUM': (405, 262),
+             'NAF': (142, 380),
+             'TUN': (197, 383),
+             'NAO': (65, 86),
+             'NRG': (226, 41),
+             'BAR': (405, 18),
+             'MID': (32, 244),
+             'IRI': (114, 167),
+             'ENG': (143, 190),
+             'NTH': (207, 142),
+             'HEL': (239, 160),
+             'SKA': (275, 135),
+             'BAL': (303, 169),
+             'BOT': (333, 113),
+             'GOL': (166, 314),
+             'WES': (169, 342),
+             'TYN': (237, 335),
+             'ION': (317, 371),
+             'ADR': (313, 323),
+             'AEG': (389, 353),
+             'BLA': (443, 289),
+             'EAS': (458, 377)}
+
 
 # TODO: once current code is stable, change add_moves to add_orders which handles every type of order.
 #  the inputs are a list of orders and two sets for successful and failed orders. each order should have a different
@@ -117,17 +224,16 @@ def generate_bounding_boxes_and_masks(territories_fp='ancient_mediterranean_maps
                                       masks_fp='ancient_mediterranean_maps/masks/'):
     for filename in os.listdir(territories_fp):
         if filename.endswith('.jpeg'):
-            territory = filename[:3]
             if filename.find('.') != 3:
                 continue
             territory = filename[:3]
             im = Image.open(territories_fp + filename)
             bbox = im.getbbox()
-            im = im.crop(bbox).convert(mode="1")
+            im = im.crop(bbox).convert(mode="1", dither=None)
             im.save(masks_fp + territory + '.bmp')
             supply_center_bounding_boxes[territory.upper()] = bbox
     print(supply_center_bounding_boxes)
-    # then you manually copy the printed dictionary to
+    # then you manually copy the printed dictionary to a hard-coded dictionary
 
 
 def color_supply_centers(im, supply_centers_by_color):
@@ -239,21 +345,71 @@ def generate_changes(supply_centers_by_color, units_by_color, successful_moves, 
     return blank
 
 
+def color_supply_centers2(im, supply_centers_by_color):
+    # color supply center territories by owner
+    for color in supply_centers_by_color.keys():
+        for supply_center in supply_centers_by_color[color]:
+            bbox = supply_center_bounding_boxes2[supply_center]
+            rgb = palette2[color]
+            mask = Image.open('classic_maps/masks/' + supply_center.lower() + '.bmp')
+            im.paste(rgb, bbox, mask)
+    return im
+
+
+def add_units2(im, units_by_color):
+    # add units corresponding to their color and unit type
+    for color in units_by_color.keys():
+        for unit_type, territory in units_by_color[color]:
+            if unit_type == 'F':
+                unit = color + '_fleet.jpeg'
+            elif unit_type == 'A':
+                unit = color + '_army.jpeg'
+            else:
+                raise Exception('{} idk'.format(unit_type))
+            sprite = Image.open('classic_maps/units/' + unit)
+            im.paste(sprite, unit_xys2[territory])
+    return im
+
+
+def generate_map2(supply_centers_by_color, units_by_color, show=False):
+    blank = Image.open('classic_maps/blank.jpeg')
+    blank = color_supply_centers2(blank, supply_centers_by_color)
+    blank = add_units2(blank, units_by_color)
+    if show:
+        blank.show()
+    return blank
+
+
 if __name__ == '__main__':
-    example_supply_centers_by_color = {'red': {'NEA', 'ROM', 'RAV', 'VIN', 'MAS'},
-                                       'blue': {'THA', 'CIR', 'CAR', 'SAG', 'LEP'},
-                                       'green': {'SPA', 'ATH', 'MAC', 'CRE'},
-                                       'black': {'SID', 'ANT', 'DAM', 'TYE', 'CYP', 'SIP'},
-                                       'yellow': {'ALE', 'MEM', 'THE', 'CYR'}}
-    example_units_by_color = {'red': {('F', 'ADR'), ('A', 'DAL'), ('A', 'MAS'), ('F', 'MES'), ('F', 'SIC')},
-                              'blue': {('A', 'LEP'), ('F', 'PUN'), ('F', 'AEG'), ('F', 'BER'), ('A', 'MAU')},
-                              'green': {('A', 'MAC'), ('A', 'ATH'), ('F', 'CRE'), ('F', 'SPA')},
-                              'black': {('A', 'DAM'), ('A', 'TYE'), ('F', 'CYP'), ('F', 'CIL'), ('A', 'SIP'),
-                                        ('A', 'ARA')},
-                              'yellow': {('A', 'SII'), ('F', 'CYR'), ('A', 'MEM'), ('A', 'PHA')}}
-    example_successful_moves = {('CIL', 'MIN'), ('AEG', 'MIL'), ('ADR', 'EPI'), ('MAC', 'BYZ'), ('ATH', 'MAC'),
-                                ('SPA', 'ATH'), ('CYP', 'EGY'), ('SIP', 'BIT'), ('LEP', 'MAR'), ('CYR', 'LEP'),
-                                ('RAV', 'ADR'), ('APU', 'ADR'), ('ADR', 'DAL')}
-    example_failed_moves = {('MAU', 'CIR'), ('PHA', 'CIR'), ('SIC', 'PUN'), ('TYE', 'JER'), ('SII', 'JER')}
-    generate_changes(example_supply_centers_by_color, example_units_by_color, example_successful_moves,
-                     example_failed_moves, show=True)
+    # example_supply_centers_by_color = {'red': {'NEA', 'ROM', 'RAV', 'VIN', 'MAS'},
+    #                                    'blue': {'THA', 'CIR', 'CAR', 'SAG', 'LEP'},
+    #                                    'green': {'SPA', 'ATH', 'MAC', 'CRE'},
+    #                                    'black': {'SID', 'ANT', 'DAM', 'TYE', 'CYP', 'SIP'},
+    #                                    'yellow': {'ALE', 'MEM', 'THE', 'CYR'}}
+    # example_units_by_color = {'red': {('F', 'ADR'), ('A', 'DAL'), ('A', 'MAS'), ('F', 'MES'), ('F', 'SIC')},
+    #                           'blue': {('A', 'LEP'), ('F', 'PUN'), ('F', 'AEG'), ('F', 'BER'), ('A', 'MAU')},
+    #                           'green': {('A', 'MAC'), ('A', 'ATH'), ('F', 'CRE'), ('F', 'SPA')},
+    #                           'black': {('A', 'DAM'), ('A', 'TYE'), ('F', 'CYP'), ('F', 'CIL'), ('A', 'SIP'),
+    #                                     ('A', 'ARA')},
+    #                           'yellow': {('A', 'SII'), ('F', 'CYR'), ('A', 'MEM'), ('A', 'PHA')}}
+    # example_successful_moves = {('CIL', 'MIN'), ('AEG', 'MIL'), ('ADR', 'EPI'), ('MAC', 'BYZ'), ('ATH', 'MAC'),
+    #                             ('SPA', 'ATH'), ('CYP', 'EGY'), ('SIP', 'BIT'), ('LEP', 'MAR'), ('CYR', 'LEP'),
+    #                             ('RAV', 'ADR'), ('APU', 'ADR'), ('ADR', 'DAL')}
+    # example_failed_moves = {('MAU', 'CIR'), ('PHA', 'CIR'), ('SIC', 'PUN'), ('TYE', 'JER'), ('SII', 'JER')}
+    # generate_changes(example_supply_centers_by_color, example_units_by_color, example_successful_moves,
+    #                  example_failed_moves, show=True)
+    starting_supply_centers2 = {'red': {'TRI', 'VIE', 'BUD'},  # austria
+                                'pink': {'LON', 'EDI', 'LVP'},  # england
+                                'blue': {'BRE', 'PAR', 'MAR'},  # france
+                                'brown': {'KIE', 'BER', 'MUN'},  # germany
+                                'green': {'NEA', 'ROM', 'VEN'},  # italy
+                                'black': {'SEV', 'STP', 'MOS', 'WAR'},  # russia
+                                'yellow': {'ANK', 'CON', 'SMY'}}  # turkey
+    units_by_color2 = {'red': {('F', 'TRI'), ('A', 'VIE'), ('A', 'BUD')},  # austria
+                       'pink': {('F', 'LON'), ('A', 'EDI'), ('A', 'LVP')},  # england
+                       'blue': {('F', 'BRE'), ('A', 'PAR'), ('A', 'MAR')},  # france
+                       'brown': {('F', 'KIE'), ('A', 'BER'), ('A', 'MUN')},  # germany
+                       'green': {('F', 'NEA'), ('A', 'ROM'), ('A', 'VEN')},  # italy
+                       'black': {('F', 'SEV'), ('F', 'STP'), ('A', 'MOS'), ('A', 'WAR')},  # russia
+                       'yellow': {('F', 'ANK'), ('A', 'CON'), ('A', 'SMY')}}  # turkey
+    generate_map2(starting_supply_centers2, units_by_color2, show=True)
