@@ -153,7 +153,7 @@ class OrderSolver:
         unit_type, color = self.units_by_terr.pop(territory)
         self.units_by_color[color].remove((unit_type, territory))
 
-    def _mass_move(self, moves):
+    def mass_move(self, moves):
         # move all units in moves by storing their color and unit type in a temporary dictionary,
         # removing the old units, then adding new units in their respective destinations
         temp_territories = {}
@@ -340,8 +340,8 @@ class OrderSolver:
         return successful_convoys
 
     def resolve_normal_orders(self, orders):
-        # TODO: resolve normal orders and generate units_to_retreat and some info for use in retreat phase
-        # TODO: once the logic is done, add descriptions to order_summary
+        # TODO: generate units_to_retreat and some info for use in retreat phase
+        # TODO: add descriptions to order_summary
         self._sort_orders(orders)
 
         # check which convoys succeed by checking if each of their convoying fleets is dislodged or not
@@ -375,6 +375,9 @@ class OrderSolver:
             self._resolve_border_attack(*clash)
         for territory in self.move_destinations.keys():
             self._resolve_attacks(territory)
+
+        # TODO: check for convoys that failed, but the army can still move because it was already adjacent to the
+        #  destination. also, convoys do not cause border clashes, so fix that.
 
         # sort dependent moves into successful and failed moves based on dependency graph
         success = set()
@@ -410,7 +413,7 @@ class OrderSolver:
         for territory in self.successful_moves:
             destination = self.orders_by_territory[territory].extra_info
             moves.append((territory, destination))
-        self._mass_move(moves)
+        self.mass_move(moves)
 
     def resolve_retreat_orders(self, orders):
         order_summary = []

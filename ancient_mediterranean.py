@@ -231,18 +231,21 @@ def set_default(obj):
     raise TypeError
 
 
-move_regex = re.compile('^([AF]) (\w{3})-(\w{3})$')
-convoyed_move_regex = re.compile('^A (\w{3})-(\w{3}) via convoy$')
-hold_regex = re.compile('^([AF]) (\w{3}) H$')
-convoy_regex = re.compile('^F (\w{3}) C (\w{3})-(\w{3})$')
-support_hold_regex = re.compile('^([AF]) (\w{3}) S (\w{3})$')
-support_move_regex = re.compile('^([AF]) (\w{3}) S (\w{3})-(\w{3})$')
-support_convoyed_move_regex = re.compile('^([AF]) (\w{3}) S (\w{3})-(\w{3}) via convoy$')
-build_regex = re.compile('^([AF]) (\w{3}) B$')
-disband_regex = re.compile('^([AF]) (\w{3}) D$')
+move_regex = re.compile('^([AF]) +(\w{3})-(\w{3})$')
+convoyed_move_regex = re.compile('^A +(\w{3})-(\w{3}) +via +convoy$')
+hold_regex = re.compile('^([AF]) +(\w{3}) +H$')
+convoy_regex = re.compile('^F (\w{3}) +C +(\w{3})-(\w{3})$')
+support_hold_regex = re.compile('^([AF]) +(\w{3}) +S +(\w{3})$')
+support_move_regex = re.compile('^([AF]) +(\w{3}) +S +(\w{3})-(\w{3})$')
+support_convoyed_move_regex = re.compile('^([AF]) +(\w{3}) +S +(\w{3})-(\w{3}) +via +convoy$')
+build_regex = re.compile('^([AF]) +(\w{3}) +B$')
+disband_regex = re.compile('^([AF]) +(\w{3}) +D$')
+add_supply_center = re.compile('^add supply center (\w{3})')
+remove_supply_center = re.compile('^remove supply center (\w{3})')
 player_regex = re.compile('^\w[\w ]*#\d{4}$')
 
 Order = namedtuple('Order', 'source order_type extra_info')
+valid_seasons = ['spring', 'spring_retreat', 'fall', 'fall_retreat', 'build']
 
 
 def read_order(order):
@@ -329,7 +332,8 @@ class AncientMediterranean:
         elif self.season == 'fall_retreat':
             self.season = 'build'
         else:
-            raise Exception('illegal season state {}'.format(self.season))
+            raise Exception('illegal season state {}\n'
+                            'valid seasons are {}'.format(self.season, valid_seasons))
         return self.season + ' ' + str(self.year)
 
     def get_num_orders_submitted(self, admin_name):
@@ -404,9 +408,9 @@ class AncientMediterranean:
                 if old_color == color:
                     continue
                 elif old_color == 'uncontrolled':
-                    summary += color + ' gained control of the uncontrolled supply center at ' + territory
+                    summary.append('{} gained control of the uncontrolled supply center at {}'.format(color, territory))
                 elif old_color != color:
-                    summary += color + ' stole the supply center at ' + territory + ' from ' + old_color
+                    summary.append('{} stole the supply center at {} from {}'.format(color, territory, old_color))
                     self.supply_centers_by_color[old_color].remove(territory)
                 self.supply_centers_by_terr[territory] = color
                 self.supply_centers_by_color[color].add(territory)
@@ -783,8 +787,8 @@ class AncientMediterranean:
         self.players_locked = False
         return 'players unlocked'
 
-    def kick_player(self, admin_name, player):
-        if admin_name != self.admin:
+    def kick_player(self, admin, player):
+        if admin != self.admin:
             raise AdministrativeException("you aren't admin, imbecile")
         if not player_regex.match(player):
             raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'.format(player))
@@ -813,3 +817,97 @@ class AncientMediterranean:
             for color in self.units_to_retreat.keys():
                 self.units_to_retreat[color] = set(self.units_to_retreat[color])
                 self.supply_centers_by_color[color] = set(self.supply_centers_by_color[color])
+
+    def override(self, admin, orders):
+        # TODO: add orders for adding units that need to retreat
+        if admin != self.admin:
+            raise AdministrativeException("need admin powers to use override command")
+        lines = orders.splitlines()
+        if len(lines) == 1:
+            raise AdministrativeException('all overriding orders must be submitted on separate lines in one message')
+        color = lines[0]
+        if color not in self.players.keys():
+            raise AdministrativeException('invalid color {}'.format(color))
+        override_msg = ['overriding {}'.format(color)]
+        override_moves = set()
+        for line in lines[1:]:
+            try:
+                match_move = move_regex.match(line)
+                match_build = build_regex.match(line)
+                match_disband = disband_regex.match(line)
+                match_add_sc = add_supply_center.match(line)
+                match_remove_sc = remove_supply_center.match(line)
+
+                # move
+                if match_move:
+                    unit_type, source, destination = match_move.groups()
+                    self._check_ownership(source, unit_type, color)
+                    override_moves.add((source, destination))
+                    override_msg.append('{} at {} moved to {}'.format(unit_type, source, destination))
+
+                # build
+                if match_build:
+                    unit_type, territory = match_build.groups()
+                    self.order_resolver.add_unit(color, unit_type, territory)
+                    override_msg.append('{} added to {}'.format(unit_type, territory))
+
+                # disband
+                if match_disband:
+                    unit_type, territory = match_disband.groups()
+                    self.order_resolver.remove_unit(territory)
+                    override_msg.append('{} in {} disbanded'.format(unit_type, territory))
+
+                # add supply center
+                if match_add_sc:
+                    territory = match_add_sc.groups()
+                    old_color = self.supply_centers_by_terr[territory]
+                    if old_color == color:
+                        override_msg.append('you already controlled the supply center at {}, fool'.format(territory))
+                        continue
+                    elif old_color == 'uncontrolled':
+                        override_msg.append('gained control of the uncontrolled supply center at {}'.format(territory))
+                    elif old_color != color:
+                        override_msg.append('stole the supply center at {} from {}'.format(territory, old_color))
+                        self.supply_centers_by_color[old_color].remove(territory)
+                    self.supply_centers_by_terr[territory] = color
+                    self.supply_centers_by_color[color].add(territory)
+
+                # remove supply center
+                if match_remove_sc:
+                    territory = match_remove_sc.groups()
+                    old_color = self.supply_centers_by_terr[territory]
+                    if old_color == color:
+                        override_msg.append('removed control of supply center in {}'.format(territory))
+                        self.supply_centers_by_color[color].remove(territory)
+                        self.supply_centers_by_terr[territory] = 'uncontrolled'
+                    else:
+                        raise InvalidOrderException(
+                            "you didn't have control of the supply center of {}, blockhead".format(territory))
+                raise InvalidOrderException('order type not recognized')
+            except InvalidOrderException as e:
+                override_msg.append(str(e))
+        self.order_resolver.mass_move(override_moves)
+
+    def set_season(self, admin, season):
+        if admin != self.admin:
+            raise AdministrativeException('need admin powers to set the season')
+        if season not in valid_seasons:
+            raise AdministrativeException('invalid season {}\n'
+                                          'valid seasons are {}'.format(season, valid_seasons))
+        self.season = season
+        return 'season set to {}'.format(season)
+
+    def set_year(self, admin, year):
+        if admin != self.admin:
+            raise AdministrativeException('need admin powers to set the year')
+        if len(year) != 2 or not year.isdigit:
+            raise AdministrativeException('year must be a two digit number. your input: {}'.format(year))
+        self.year = int(year)
+        return 'year set to {}'.format(year)
+
+    def clear_orders(self, admin):
+        if admin != self.admin:
+            raise AdministrativeException('need admin powers to clear all orders')
+        for color in self.orders.keys():
+            self.orders[color].clear()
+        return 'all orders cleared'

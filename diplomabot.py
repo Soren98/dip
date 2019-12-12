@@ -31,47 +31,75 @@ async def idk(channel, auth):
 
 @client.event
 async def on_message(msg):
-    # TODO: command for admin to set any part of game state except orders
     auth = str(msg.author)
     channel = str(msg.channel)
     if auth == 'diplomacybot#4346':
         return
     print(auth)
     print(channel)
+    if msg.content.startswith('!override'):
+        try:
+            if await _valid_channel(msg.channel):
+                await msg.channel.send(games[channel].override(auth, str(msg.content)[10:].lower()))
+        except AdministrativeException as e:
+            await msg.channel.send(str(e))
+        return
     lines = str(msg.content).splitlines()
     for line in lines:
         try:
             if line == '!help':
-                await msg.channel.send('list of commands:\n'
-                                       '!hello: to greet the bot\n'
-                                       '!admin: use to claim admin power\n'
-                                       '!relinquish_admin: removes your admin power (why you would do this is beyond me)\n'
-                                       '!lock_players: **ADMIN ONLY** stop players from claiming colors\n'
-                                       '!unlock_players: **ADMIN ONLY** allow players to claim colors\n'
-                                       '!kick_player AAAAA#0000: **ADMIN ONLY** removes player from their assigned color\n'
-                                       '!status: **ADMIN ONLY** displays how many orders each player has submitted\n'
-                                       '!step: **ADMIN ONLY** advances the game state one phase\n'
-                                       '!assign <color>: use to assign yourself as one of the 5 players\n'
-                                       '!resign: removes you from the game (tho your units are unchanged)\n'
-                                       'supported colors are red, blue, green, black, and yellow\n'
-                                       'THOSE BELOW ARE CURRENTLY UNAVAILABLE CUZ SORENS DUMB\n'
-                                       '!my_units: returns a list of your units\n'
-                                       '!all_units: returns a list of all units on the board\n'
-                                       '!my_supply_centers: returns a list of your supply centers\n'
-                                       '!all_supply_centers: returns a list of all owned supply centers on the board\n'
-                                       '!my_orders: returns a list of your units with their corresponding orders\n'
-                                       '!get XXX: returns the order issued to the unit in territory XXX\n'
-                                       '!reset_orders: removes all orders submitted this season'
-                                       'you may also type in any orders (one per line) to issue to your units\n'
-                                       'example: F Tha S Pun')
-            elif line.startswith('!hello'):
+                await msg.author.send(
+                    "orders are any line that start with an a or f (not case sensitive) of the form:\n"
+                    "'f aaa-bbb' for a move from aaa to bbb\n"
+                    "'a ccc-ddd via convoy' for a convoyed move from ccc to ddd\n"
+                    "'a eee h' for a unit in eee to hold\n"
+                    "'f fff c ggg-hhh' to order a fleet in fff to convoy an army from ggg to hhh\n"
+                    "'f iii s jjj' for a unit in iii to support jjj's hold\n"
+                    "'a kkk s lll-mmm' for kkk to support lll's move into mmm\n"
+                    "'a nnn s ooo-ppp via convoy' for nnn to support ooo's convoyed move into ppp\n"
+                    "'a ccc-ddd via convoy' for a convoyed move from ccc to ddd\n"
+                    "all units in diplomacy are referred to using three letter codes.\n"
+                    "this bot currently doesn't support use of the territories' full names (and probably never will).\n"
+                    "**!more_help**: for a list of administrative commands use\n"
+                    "**!admin help**: for admin only commands")
+            elif line == '!more_help':
+                await msg.author.send(
+                    "**!hello**: to greet the bot\n"
+                    "**!assign** <color>: take control of one of the 5 colors (red, blue, green, black, and yellow)\n"
+                    "**!resign**: removes you from the game (your units and supply centers remain unchanged)\n"
+                    "**!my_units**: returns a list of your units\n"
+                    "**!all_units**: returns a list of everyone's units\n"
+                    "**!my_supply_centers**: returns a list of your supply centers\n"
+                    "**!all_supply_centers**: returns a list of everyone's supply centers\n"
+                    "**!my_orders**: ofr a list of your units with their corresponding orders\n"
+                    "**!get** xxx: returns the order issued to the unit in xxx\n"
+                    "**!reset_orders**: removes all orders submitted this season\n"
+                    "**!admin**: use to claim admin power\n"
+                    "**!relinquish_admin**: removes your admin power (why you would do this is beyond me)\n"
+                    "use **!admin_help** for a list of admin only commands")
+            elif line == '!admin_help':
+                await msg.author.send(
+                    "**!lock_players**: stop players from claiming colors\n"
+                    "**!unlock_players**: allow players to claim colors\n"
+                    "**!kick_player** <user id>: removes player from their assigned color\n"
+                    "**!status**: displays how many orders each player has submitted\n"
+                    "**!step**: advances the game state one phase\n"
+                    "**!set_season** <season>: self-explanatory\n"
+                    "**!set_year** ##: ditto\n"
+                    "**!clear_orders**: deletes all orders submitted by all players\n"
+                    "**!override** <color>: **ADMIN ONLY** all following lines in the message will be\n"
+                    "immediately resolved to adjust the game state of the specified color. moves can\n"
+                    "be move, build, or disband orders to modify color's units or special\n"
+                    "'add supply center' or 'remove supply center' orders that add and remove\n"
+                    "control of supply centers, respectively")
+            elif line == '!hello':
                 await msg.channel.send('Fuck off {}, ya cunt!\n'.format(str(games[channel].get_players())))
-            elif line.startswith('!save'):
+            elif line == '!save':
                 if channel not in games.keys():
                     await channel.send('there is no game associated with this channel to save')
                 games[channel].save(channel)
                 await msg.channel.send('game state saved')
-            elif line.startswith('!load'):
+            elif line == '!load':
                 games[channel] = AncientMediterranean()
                 games[channel].load(channel)
                 for p in games[channel].get_players():
@@ -82,7 +110,7 @@ async def on_message(msg):
                     else:
                         players[p] = {channel}
                 await msg.channel.send('game state loaded')
-            elif line.startswith('!new_game'):
+            elif line == '!new_game':
                 if isinstance(channel, DMChannel):
                     await channel.send('a new game cannot be started in a DM channel')
                 elif channel in games.keys():
@@ -90,16 +118,16 @@ async def on_message(msg):
                 else:
                     games[channel] = AncientMediterranean()
                     await msg.channel.send('new game started in {}'.format(str(channel)))
-            elif line.startswith('!admin'):
+            elif line == '!admin':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].assign_admin(auth))
-            elif line.startswith('!relinquish_admin'):
+            elif line == '!relinquish_admin':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].relinquish_admin(auth))
-            elif line.startswith('!lock_players'):
+            elif line == '!lock_players':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].lock_players(auth))
-            elif line.startswith('!unlock_players'):
+            elif line == '!unlock_players':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].unlock_players(auth))
             elif line.startswith('!kick_player'):
@@ -107,15 +135,21 @@ async def on_message(msg):
                     await msg.channel.send(games[channel].kick_player(auth, line[13:]))
                     # remove channel from player's game set
                     players[auth].remove(channel)
-                    # # this may be necessary
-                    # if len(players[auth]) == 0:
-                    #     players.pop(auth)
-            elif line.startswith('!status'):
+            elif line == '!status':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].get_num_orders_submitted(auth))
-            elif line.startswith('!step'):
+            elif line == '!step':
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].game_step(auth))
+            elif line.startswith('!set_season'):
+                if await _valid_channel(msg.channel):
+                    await msg.channel.send(games[channel].set_season(auth, line[12:]))
+            elif line.startswith('!set_year'):
+                if await _valid_channel(msg.channel):
+                    await msg.channel.send(games[channel].set_year(auth, line[10:]))
+            elif line == '!clear_orders':
+                if await _valid_channel(msg.channel):
+                    await msg.channel.send(games[channel].clear_orders(auth))
             elif line.startswith('!assign'):
                 if await _valid_channel(msg.channel):
                     await msg.channel.send(games[channel].assign_player(auth, line[8:].lower()))
@@ -173,9 +207,6 @@ assert len(sys.argv) == 2, "must provide only one input, the bot's token"
 TOKEN = sys.argv[1]
 client.run(TOKEN)
 
-# TODO: make administrator role with ability to lock and unlock color assignment which gets announced publicly
+# TODO:
 #  ability to generate maps
-#  function to resolve conflicts and update unit positions
-#  command for building units
-#  calculate number of units to destroy or build
-#  better error messages. explain why an order is incorrect instead of sending 'incorrect'
+#  let players select which game they're submitting orders to via DMs
