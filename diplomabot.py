@@ -31,6 +31,7 @@ async def idk(channel, auth):
 
 @client.event
 async def on_message(msg):
+    # TODO: command for admin to set any part of game state except orders
     auth = str(msg.author)
     channel = str(msg.channel)
     if auth == 'diplomacybot#4346':

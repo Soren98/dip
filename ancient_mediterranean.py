@@ -1,5 +1,7 @@
 from copy import deepcopy
+from collections import namedtuple
 import re, json
+from order_resolver import OrderSolver
 
 territories = {'GAU', 'RHA', 'SAM', 'VIN', 'ILL', 'LUS', 'ARM', 'GAL', 'DAM', 'ARA', 'CIR', 'SAH', 'PHA', 'MAR', 'SAG',
                'TAR', 'MAS', 'ETU', 'ROM', 'NEA', 'APU', 'RAV', 'VEN', 'DAL', 'EPI', 'ATH', 'SPA', 'MAC', 'BYZ', 'DAC',
@@ -8,15 +10,15 @@ territories = {'GAU', 'RHA', 'SAM', 'VIN', 'ILL', 'LUS', 'ARM', 'GAL', 'DAM', 'A
                'LIG', 'TYN', 'PUN', 'ADR', 'ION', 'AUS', 'GOT', 'GOS', 'LIB', 'MES', 'AEG', 'BLA', 'MIN', 'EGY',
                'CIL', 'SYR', 'GOP', 'REE', 'BAL'}
 
-inlands = ['GAU', 'RHA', 'SAM', 'VIN', 'ILL', 'LUS', 'ARM', 'GAL', 'DAM', 'ARA', 'CIR', 'SAH', 'PHA', 'MAR']
-coasts = ['SAG', 'TAR', 'MAS', 'ETU', 'ROM', 'NEA', 'APU', 'RAV', 'VEN', 'DAL', 'EPI', 'ATH', 'SPA', 'MAC', 'BYZ',
+inlands = {'GAU', 'RHA', 'SAM', 'VIN', 'ILL', 'LUS', 'ARM', 'GAL', 'DAM', 'ARA', 'CIR', 'SAH', 'PHA', 'MAR'}
+coasts = {'SAG', 'TAR', 'MAS', 'ETU', 'ROM', 'NEA', 'APU', 'RAV', 'VEN', 'DAL', 'EPI', 'ATH', 'SPA', 'MAC', 'BYZ',
           'DAC', 'CHE', 'SIP', 'BIT', 'MIL', 'ISA', 'CAP', 'ANT', 'SID', 'TYE', 'JER', 'SII', 'PET', 'NAB', 'MAU',
-          'CAR', 'THA', 'NUM', 'LEP', 'CYR', 'ALE', 'MEM', 'BAY', 'THE', 'COR', 'SAD', 'SIC', 'CRE', 'CYP']
-seas = ['IBE', 'BER', 'LIG', 'TYN', 'PUN', 'ADR', 'ION', 'AUS', 'GOT', 'GOS', 'LIB', 'MES', 'AEG', 'BLA', 'MIN', 'EGY',
-        'CIL', 'SYR', 'GOP', 'REE', 'BAL']
-supply_center_territories = ['VIN', 'DAM', 'CIR', 'SAG', 'MAS', 'ROM', 'NEA', 'RAV', 'DAL', 'ATH', 'SPA', 'MAC', 'BYZ',
+          'CAR', 'THA', 'NUM', 'LEP', 'CYR', 'ALE', 'MEM', 'BAY', 'THE', 'COR', 'SAD', 'SIC', 'CRE', 'CYP'}
+seas = {'IBE', 'BER', 'LIG', 'TYN', 'PUN', 'ADR', 'ION', 'AUS', 'GOT', 'GOS', 'LIB', 'MES', 'AEG', 'BLA', 'MIN', 'EGY',
+        'CIL', 'SYR', 'GOP', 'REE', 'BAL'}
+supply_center_territories = {'VIN', 'DAM', 'CIR', 'SAG', 'MAS', 'ROM', 'NEA', 'RAV', 'DAL', 'ATH', 'SPA', 'MAC', 'BYZ',
                              'CHE', 'SIP', 'MIL', 'ANT', 'SID', 'TYE', 'JER', 'PET', 'CAR', 'THA', 'NUM', 'LEP', 'CYR',
-                             'ALE', 'MEM', 'THE', 'SAD', 'SIC', 'CRE', 'CYP', 'BAL']
+                             'ALE', 'MEM', 'THE', 'SAD', 'SIC', 'CRE', 'CYP', 'BAL'}
 starting_supply_centers = {'red': {'NEA', 'ROM', 'RAV'},
                            'blue': {'THA', 'CIR', 'CAR'},
                            'green': {'SPA', 'ATH', 'MAC'},
@@ -195,10 +197,10 @@ sea_routes = {'IBE': ['SAG', 'BER', 'MAU'],
 
 def check_route_dictionaries():
     # check route dictionaries
-    territories_set = set(territories)
+    territories_set = deepcopy(territories)
     print('land')
     for key in land_routes.keys():
-        territories.discard(key)
+        territories_set.discard(key)
         for val in land_routes[key]:
             if key not in land_routes[val]:
                 print('{} {}'.format(key, val))
@@ -206,7 +208,7 @@ def check_route_dictionaries():
                 print(key)
     print('coast')
     for key in coast_routes.keys():
-        territories.discard(key)
+        territories_set.discard(key)
         for val in coast_routes[key]:
             if key not in coast_routes[val]:
                 print('{} {}'.format(key, val))
@@ -214,7 +216,7 @@ def check_route_dictionaries():
                 print(key)
     print('sea')
     for key in sea_routes.keys():
-        territories.discard(key)
+        territories_set.discard(key)
         for val in sea_routes[key]:
             if key not in sea_routes[val]:
                 print('{} {}'.format(key, val))
@@ -240,14 +242,32 @@ build_regex = re.compile('^([AF]) (\w{3}) B$')
 disband_regex = re.compile('^([AF]) (\w{3}) D$')
 player_regex = re.compile('^\w[\w ]*#\d{4}$')
 
+Order = namedtuple('Order', 'source order_type extra_info')
+
 
 def read_order(order):
-    if isinstance(order, tuple):
-        order_str = ''
-        for s in order:
-            order_str += s + ' '
-        return order_str
-    return order
+    order_str = order.source + ' ' + order.order_type
+    if order.order_type == 'hold':
+        pass
+    elif order.order_type in {'move', 'convoyed_move', 'support_move', 'build', 'disband'}:
+        order_str += ' ' + order.extra_info
+    elif order.order_type in {'convoy', 'support_move', 'support_convoyed_move'}:
+        order_str += ' ' + order.extra_info[0] + ' ' + order.extra_info[1]
+    return order_str
+
+
+def _convoy_possible2(source, destination, convoying_fleets):
+    stack = [source]
+    checked = set()
+    while stack:
+        cur = stack.pop()
+        for adj in sea_routes.get(cur, set()):
+            if adj == destination:
+                return True
+            if adj in convoying_fleets and adj not in checked:
+                checked.add(adj)
+                stack += adj
+    return False
 
 
 class AdministrativeException(Exception):
@@ -266,19 +286,20 @@ class AncientMediterranean:
     admin = None
     players_locked = False
     players = {'red': None, 'blue': None, 'green': None, 'black': None, 'yellow': None}
-    units_by_color = {'red': [('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')],
+    units_by_color = {'red': [('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')],  # (unit type, territory)
                       'blue': [('F', 'THA'), ('A', 'CIR'), ('A', 'CAR')],
                       'green': [('F', 'SPA'), ('A', 'ATH'), ('A', 'MAC')],
                       'black': [('F', 'SID'), ('A', 'ANT'), ('A', 'DAM')],
                       'yellow': [('F', 'ALE'), ('A', 'MEM'), ('A', 'THE')]}
-    units_by_terr = {}
+    units_by_terr = {}  # (unit type, color)
     units_to_retreat = {'red': set(), 'blue': set(), 'green': set(), 'black': set(), 'yellow': set()}
-    orders = {'red': {}, 'blue': {}, 'green': {}, 'black': {}, 'yellow': {}}
+    orders = {'red': {}, 'blue': {}, 'green': {}, 'black': {}, 'yellow': {}}  # (source, order type, ...)
     num_to_build = {'red': 0, 'blue': 0, 'green': 0, 'black': 0, 'yellow': 0}
     supply_centers_by_color = deepcopy(starting_supply_centers)
     supply_centers_by_terr = {terr: 'uncontrolled' for terr in supply_center_territories}
     season = 'spring'
     year = 1
+    order_resolver = None
 
     def __init__(self):
         # add starting units to units_by_terr
@@ -289,6 +310,7 @@ class AncientMediterranean:
         for color in self.supply_centers_by_color.keys():
             for sc in self.supply_centers_by_color[color]:
                 self.supply_centers_by_terr[sc] = color
+        self.order_resolver = OrderSolver(self.units_by_color, self.units_by_terr)
 
     def _season_step(self, retreat):
         if self.season == 'build':
@@ -319,34 +341,36 @@ class AncientMediterranean:
                            + str(len(self.orders[color])) + ' orders submitted')
         return '\n'.join(ret_str)
 
+    def _flatten_orders(self):
+        flat = set()
+        for color in self.orders.keys():
+            for territory, order in self.orders[color]:
+                flat.add(order)
+        return flat
+
     def game_step(self, admin_name):
         if admin_name != self.admin:
             raise AdministrativeException("you aren't admin, imbecile")
-        overview = ['overview of ' + self.season + ' ' + str(self.year)]
+        overview = ['overview of {} {}'.format(self.season, self.year)]
         retreat = False
         if self.season == 'build':
             # add new and remove extra units
-            overview += self._build_disband()
-        elif self.season in ['spring', 'fall']:
+            overview += self.order_resolver.build_disband(self._flatten_orders())
+        elif self.season in {'spring', 'fall'}:
             # move units to new territories and resolve conflicts
-            order_summary = self._resolve_normal_orders()
-            overview += order_summary
-            # determine if retreat phase is needed
-            for color in self.units_to_retreat.keys():
-                if len(self.units_to_retreat[color]) > 0:
+            overview += self.order_resolver.resolve_normal_orders(self._flatten_orders())
+            # inform players of dislodged units and determine if retreat phase is needed
+            for color, units in self.units_to_retreat.items():
+                if units:
                     retreat = True
-                    break
-            # inform players of dislodged units
-            if retreat:
-                for color in self.units_to_retreat.keys():
-                    if self.units_to_retreat[color]:
-                        overview.append(color + ' must order '
-                                        + ", ".join(self.units_to_retreat[color]) + ' to retreat or disband')
-        elif self.season in ['spring_retreat', 'fall_retreat']:
-            overview += self._resolve_retreat_orders()
-            self.units_to_retreat = {'red': set(), 'blue': set(), 'green': set(), 'black': set(), 'yellow': set()}
+                    overview.append('{} must order {} to retreat or disband'.format(color, ", ".join(units)))
+        elif self.season in {'spring_retreat', 'fall_retreat'}:
+            overview += self.order_resolver.resolve_retreat_orders(self._flatten_orders())
+            # reset units_to_retreat
+            for units in self.units_to_retreat.values():
+                units.clear()
 
-        if self.season in ['fall', 'fall_retreat']:
+        if self.season in {'fall', 'fall_retreat'}:
             # determine change in supply centers
             overview += self._update_supply_centers()
             # check if any player controls 18
@@ -354,44 +378,18 @@ class AncientMediterranean:
             # calculate number of units to build or disband
             for color in self.units_by_color.keys():
                 num_builds = len(self.supply_centers_by_color[color]) - len(self.units_by_color[color])
+                self.num_to_build[color] = num_builds
                 if num_builds < 0:
-                    overview.append(color + ': ' + str(num_builds) + ' units to disband')
+                    overview.append('{}: {} units to disband'.format(color, abs(num_builds)))
                 else:
-                    overview.append(color + ': ' + str(num_builds) + ' units to build')
+                    overview.append('{}: {} units to build'.format(color, num_builds))
 
         # reset orders
-        self.orders = {'red': {}, 'blue': {}, 'green': {}, 'black': {}, 'yellow': {}}
+        for order_dict in self.orders.values():
+            order_dict.clear()
         self._season_step(retreat)
-        overview.append('next phase is ' + self.season + ' ' + str(self.year))
+        overview.append('next phase is {} {}'.format(self.season, self.year))
         return '\n'.join(overview)
-
-    def _resolve_normal_orders(self):
-        # TODO: resolve normal orders and generate units_to_retreat and some info for use in retreat phase
-        order_summary = []
-        return order_summary
-
-    def _resolve_retreat_orders(self):
-        # TODO: resolve retreat orders
-        order_summary = []
-        return order_summary
-
-    def _build_disband(self):
-        # add or remove units corresponding to each color's build and disband orders
-        summary = []
-        for color in self.orders.keys():
-            for order in self.orders[color]:
-                _, territory, order_type, unit_type = order
-                if order_type == 'build':
-                    summary += color + ' built ' + unit_type + ' at ' + territory
-                    self.units_by_color[color] += (unit_type, territory)
-                    self.units_by_terr[territory] = (unit_type, color)
-                elif order_type == 'disband':
-                    summary += color + ' disbanded ' + unit_type + ' at ' + territory
-                    self.units_by_color[color].remove((unit_type, territory))
-                    self.units_by_terr.pop(territory)
-                else:
-                    print('illegal order {} during build phase'.format(order))
-        return summary
 
     def _update_supply_centers(self):
         # loop through each color's units and check if they took control of uncontrolled supply centers
@@ -399,19 +397,19 @@ class AncientMediterranean:
         summary = []
         for color in self.units_by_color.keys():
             for unit in self.units_by_color[color]:
-                terr = unit[1]
-                if terr not in supply_center_territories:
+                territory = unit[0]
+                if territory not in supply_center_territories:
                     continue
-                old_color = self.supply_centers_by_terr[terr]
+                old_color = self.supply_centers_by_terr[territory]
                 if old_color == color:
                     continue
                 elif old_color == 'uncontrolled':
-                    summary += color + ' gained control of the uncontrolled supply center at ' + terr
+                    summary += color + ' gained control of the uncontrolled supply center at ' + territory
                 elif old_color != color:
-                    summary += color + ' stole the supply center at ' + terr + ' from ' + old_color
-                    self.supply_centers_by_color[old_color].remove(terr)
-                self.supply_centers_by_terr[terr] = color
-                self.supply_centers_by_color[color].add(terr)
+                    summary += color + ' stole the supply center at ' + territory + ' from ' + old_color
+                    self.supply_centers_by_color[old_color].remove(territory)
+                self.supply_centers_by_terr[territory] = color
+                self.supply_centers_by_color[color].add(territory)
         return summary
 
     def _check_for_winner(self):
@@ -426,7 +424,7 @@ class AncientMediterranean:
         return win_str
 
     def _unit_occupying(self, territory):
-        if territory not in self.units_by_terr.keys():
+        if self.units_by_terr.get(territory):
             return None
         return self.units_by_terr[territory][0]
 
@@ -435,17 +433,17 @@ class AncientMediterranean:
             raise InvalidOrderException('territory {} unknown'.format(source))
         if destination not in territories:
             raise InvalidOrderException('territory {} unknown'.format(destination))
-        if source not in coast_routes.keys():
+        if coast_routes.get(source) is None:
             raise InvalidOrderException('only armies on coasts can be convoyed\n'
                                         '{} is not a coastal territory'.format(source))
-        if destination not in coast_routes.keys():
+        if coast_routes.get(destination) is None:
             raise InvalidOrderException('armies can only be convoyed to coasts\n'
                                         '{} is not a coastal territory'.format(destination))
-        stack = [(source, None)]
+        stack = [source]
         checked = {source}
         while stack:
             cur = stack.pop()
-            for adj in sea_routes[cur]:
+            for adj in sea_routes.get(cur, set()):
                 if adj == destination:
                     return True
                 if adj in seas and adj not in checked:
@@ -457,7 +455,6 @@ class AncientMediterranean:
     def _retreat_possible(self, source, destination):
         # TODO: figure out if the unit is allowed to retreat to the ordered territory
         self._check_adjacency(source, destination)
-        pass
 
     def _check_adjacency(self, source, destination):
         if source not in territories:
@@ -465,20 +462,20 @@ class AncientMediterranean:
         if destination not in territories:
             raise InvalidOrderException('territory {} unknown'.format(destination))
 
-        if coast_routes.get(source) and destination in coast_routes.get(source):
+        if destination in coast_routes.get(source, set()):
             return
         unit_type = self._unit_occupying(source)
         if unit_type == 'A':
             if destination in seas:
                 raise InvalidOrderException("armies can't move to sea territories")
-            if source not in land_routes.keys():
+            if land_routes.get(source) is None:
                 raise InvalidOrderException('army not on land. yell at soren')
             if destination not in land_routes[source]:
                 raise InvalidOrderException('{} and {} are not adjacent'.format(source, destination))
         elif unit_type == 'F':
             if destination in inlands:
                 raise InvalidOrderException("fleets can't move to inland territories")
-            if source not in sea_routes.keys():
+            if sea_routes.get(source) is None:
                 raise InvalidOrderException('fleet not on coast or in seas. yell at soren')
             if destination not in sea_routes[source]:
                 raise InvalidOrderException('{} and {} are not adjacent'.format(source, destination))
@@ -489,13 +486,13 @@ class AncientMediterranean:
         if territory not in territories:
             raise InvalidOrderException('territory {} unknown'.format(territory))
         # check if unit exists on the source territory and which color it is
-        if territory not in self.units_by_terr.keys():
+        if self.units_by_terr.get(territories) is None:
             raise InvalidOrderException('territory {} unoccupied'.format(territory))
-        unit = self.units_by_terr[territory]
-        if unit_type != unit[0]:
+        actual_unit_type, actual_color = self.units_by_terr[territory]
+        if unit_type != actual_unit_type:
             raise InvalidOrderException(
-                'the unit in territory {} was ordered as {} but is {}'.format(territory, unit_type, unit[0]))
-        if color != unit[1]:
+                'the unit in territory {} was ordered as {} but is {}'.format(territory, unit_type, actual_unit_type))
+        if color != actual_color:
             raise InvalidOrderException("you don't control the unit in the territory".format(territory))
 
     def _interpret_order(self, order, color):
@@ -519,11 +516,11 @@ class AncientMediterranean:
                 if territory not in starting_supply_centers[color]:
                     raise InvalidOrderException(
                         "you can't build at {}, it is not one of your starting supply centers".format(territory))
-                if unit_type == 'F' and territory not in coast_routes.keys():
+                if unit_type == 'F' and coast_routes.get(territory) is None:
                     raise InvalidOrderException(
                         "you can't build a fleet at the inland supply center {}".format(territory))
-                if territory in self.orders[color].keys() or len(self.orders[color]) < self.num_to_build[color]:
-                    return color, territory, 'build', unit_type
+                if self.orders[color].get(territory) is not None or len(self.orders[color]) < self.num_to_build[color]:
+                    return Order(territory, 'build', unit_type)
                 raise InvalidOrderException(
                     'you already reached your number of builds, {}, for this turn\n'
                     'reset your orders with !reset_orders to change your builds'.format(self.num_to_build[color]))
@@ -533,7 +530,7 @@ class AncientMediterranean:
                 unit_type, territory = match_disband.groups()
                 self._check_ownership(territory, unit_type, color)
                 if -len(self.orders[color]) > self.num_to_build[color]:
-                    return color, territory, 'disband', unit_type
+                    return Order(territory, 'disband', unit_type)
                 raise InvalidOrderException(
                     'you have already reached your number of disbands, {}, for this turn\n'
                     'reset your orders with !reset_orders to change your disbands'.format(self.num_to_build[color]))
@@ -550,7 +547,7 @@ class AncientMediterranean:
                 if territory not in self.units_to_retreat[color]:
                     raise InvalidOrderException(
                         'the unit in {} has not been dislodged, so you cant disband it'.format(territory))
-                return color, territory, 'disband'
+                return Order(territory, 'disband', None)
 
             # move
             if match_move:
@@ -561,7 +558,7 @@ class AncientMediterranean:
                         'the unit in {} has not been dislodged, so it cant retreat'.format(source))
                 if not self._retreat_possible(source, destination):
                     raise InvalidOrderException(''.format(source, destination))
-                return color, source, 'move', destination
+                return Order(source, 'move', destination)
 
             if match_convoyed_move or match_hold or match_convoy or match_support_hold or match_support_move or match_support_convoyed_move or match_build:
                 raise InvalidOrderException('only move and disband orders are allowed during retreat phases')
@@ -572,7 +569,7 @@ class AncientMediterranean:
             unit_type, source, destination = match_move.groups()
             self._check_ownership(source, unit_type, color)
             self._check_adjacency(source, destination)
-            return color, source, 'move', destination
+            return Order(source, 'move', destination)
 
         # convoyed_move
         if match_convoyed_move:
@@ -581,13 +578,13 @@ class AncientMediterranean:
             if not self._convoy_possible(source, destination):
                 raise InvalidOrderException(
                     'there is no possible route via fleets at sea to convoy {} to {}'.format(source, destination))
-            return color, source, 'convoyed_move', destination
+            return Order(source, 'convoyed_move', destination)
 
         # hold
         if match_hold:
             unit_type, source = match_hold.groups()
             self._check_ownership(source, unit_type, color)
-            return color, source, 'hold'
+            return Order(source, 'hold', None)
 
         # convoy
         if match_convoy:
@@ -598,7 +595,7 @@ class AncientMediterranean:
             if not self._convoy_possible(source, destination):
                 raise InvalidOrderException(
                     'there is no possible route via fleets at sea to convoy {} to {}'.format(source, destination))
-            return color, convoy_loc, 'convoy', source, destination
+            return Order(convoy_loc, 'convoy', (source, destination))
 
         # support hold
         if match_support_hold:
@@ -607,7 +604,7 @@ class AncientMediterranean:
             self._check_adjacency(source, destination)
             if self._unit_occupying(destination) is None:
                 raise InvalidOrderException('no unit in {} to support'.format(destination))
-            return color, source, 'support_hold', destination
+            return Order(source, 'support_hold', destination)
 
         # support move
         if match_support_move:
@@ -615,7 +612,7 @@ class AncientMediterranean:
             self._check_ownership(support_source, unit_type, color)
             self._check_adjacency(support_source, destination)
             self._check_adjacency(attack_source, destination)
-            return color, support_source, 'support_move', attack_source, destination
+            return Order(support_source, 'support_move', (attack_source, destination))
 
         # support convoyed move
         if match_support_convoyed_move:
@@ -637,7 +634,7 @@ class AncientMediterranean:
                 raise InvalidOrderException(
                     'there is no possible route via fleets at sea to convoy {} to {}'.format(attack_source,
                                                                                              destination))
-            return color, support_source, 'support_convoyed_move', attack_source, destination
+            return Order(support_source, 'support_convoyed_move', (attack_source, destination))
 
         if match_build or match_disband:
             raise InvalidOrderException('cannot build or disband during spring or fall seasons')
@@ -652,34 +649,36 @@ class AncientMediterranean:
     def add_order(self, player, order):
         color = self.get_color(player)
         order = self._interpret_order(order, color)
-        if not isinstance(order, tuple):
-            raise InvalidOrderException('order "{}" not returned as a tuple. yell at soren to fix.'.format(order))
-        territory = order[1]
+        if not isinstance(order, Order):
+            raise InvalidOrderException('order "{}" not of type Order. yell at soren to fix.'.format(order))
+        territory = order.source
         self.orders[color][territory] = order
         return read_order(order)
 
     def reset_orders(self, player):
         color = self.get_color(player)
-        self.orders[color] = {}
+        self.orders[color].clear()
 
     def get_order(self, player, territory):
-        color = self.get_color(player)
+        if territory not in territories:
+            raise AdministrativeException('invalid territory {}'.format(territory))
+        if self.units_by_terr.get(territory) is None:
+            return 'no unit in {}'.format(territory)
+        _, color = self.units_by_terr[territory]
+        if color != self.get_color(player):
+            raise AdministrativeException("you don't control a unit in this territory, dork")
         if territory not in self.orders[color]:
-            for unit in self.units_by_color[color]:
-                if unit[1] == territory:
-                    return '{} no order issued'.format(territory)
-            return "you don't control a unit in this territory, dork"
+            return '{} no order issued'.format(territory)
         return read_order(self.orders[color][territory])
 
     def get_my_orders(self, player):
         color = self.get_color(player)
         orders_str = ''
-        for unit in self.units_by_color[color]:
-            unit_terr = unit[1]
-            if unit_terr in self.orders[color]:
-                orders_str += read_order(self.orders[color][unit_terr]) + '\n'
+        for unit_type, territory in self.units_by_color[color]:
+            if territory in self.orders[color]:
+                orders_str += read_order(self.orders[color][territory]) + '\n'
             else:
-                orders_str += unit[1] + ' no order issued' + '\n'
+                orders_str += unit_type + ' no order issued' + '\n'
         if orders_str == '':
             return "you don't have any units to order, fool."
         return orders_str
@@ -688,37 +687,30 @@ class AncientMediterranean:
         color = self.get_color(player)
         units_str = ''
         for unit in self.units_by_color[color]:
-            units_str += unit[0] + ' ' + unit[1] + '\n'
+            units_str += '\n'.join(['{} {}'.format(*unit)])
         if units_str == '':
             return "you don't have any units, loser."
         return units_str
 
     def get_all_units(self):
         units_str = ''
-        for color in self.units_by_color.keys():
-            for unit in self.units_by_color[color]:
-                units_str += color + ' ' + unit[0] + ' ' + unit[1] + '\n'
+        for color, units in self.units_by_color.items():
+            units_str += '\n'.join(['{} {} {}'.format(color, *unit) for unit in units])
         if units_str == '':
             return 'no units found (soren fucked up)'
         return units_str
 
     def get_my_supply_centers(self, player):
-        try:
-            color = self.get_color(player)
-        except InvalidPlayerException as e:
-            return str(e)
-        s = ''
-        for sc in self.supply_centers_by_color[color]:
-            s += sc + '\n'
+        color = self.get_color(player)
+        s = '\n'.join(self.supply_centers_by_color[color])
         if s == '':
             return "you don't have any supply centers, stupid."
         return s
 
     def get_all_supply_centers(self):
         s = ''
-        for color in self.supply_centers_by_color.keys():
-            for sc in self.supply_centers_by_color[color]:
-                s += color + ' ' + sc + '\n'
+        for color, supply_centers in self.supply_centers_by_color.items():
+            s += '\n'.join(['{} {}'.format(color, supply_center) for supply_center in supply_centers])
         if s == '':
             return 'no supply centers found (soren fucked up)'
         return s
@@ -815,9 +807,9 @@ class AncientMediterranean:
 
     def load(self, fp):
         with open('diplomacy_' + fp + '.json', 'r') as file:
-            self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr,\
-            self.units_to_retreat, self.orders, self.num_to_build, self.supply_centers_by_color,\
-            self.supply_centers_by_terr, self.season, self.year = json.load(file)
+            self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr, \
+                self.units_to_retreat, self.orders, self.num_to_build, self.supply_centers_by_color, \
+                self.supply_centers_by_terr, self.season, self.year = json.load(file)
             for color in self.units_to_retreat.keys():
                 self.units_to_retreat[color] = set(self.units_to_retreat[color])
                 self.supply_centers_by_color[color] = set(self.supply_centers_by_color[color])
