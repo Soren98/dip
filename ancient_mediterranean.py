@@ -1,8 +1,10 @@
+import os
 import re
 import json
 from copy import deepcopy
 from collections import namedtuple
 from order_resolver import OrderSolver
+from generate_map import generate_map, add_moves
 
 territories = {'GAU', 'RHA', 'SAM', 'VIN', 'ILL', 'LUS', 'ARM', 'GAL', 'DAM', 'ARA', 'CIR', 'SAH', 'PHA', 'MAR', 'SAG',
                'TAR', 'MAS', 'ETR', 'ROM', 'NEA', 'APU', 'RAV', 'VEN', 'DAL', 'EPI', 'ATH', 'SPA', 'MAC', 'BYZ', 'DAC',
@@ -285,6 +287,8 @@ class InvalidOrderException(Exception):
 class InvalidPlayerException(Exception):
     pass
 
+# TODO: use nested functions and closure to make the ancient mediterranean class generic for any variant desired
+
 
 class AncientMediterranean:
     def __init__(self, load_path=None):
@@ -318,6 +322,11 @@ class AncientMediterranean:
             for color in self.colors:
                 for sc in self.supply_centers_by_color[color]:
                     self.supply_centers_by_terr[sc] = color
+        if not os.path.exists(load_path):
+            os.makedirs(load_path)
+        new_map = generate_map(self.supply_centers_by_color, self.units_by_color)
+        new_map.save(load_path + '/' + self.season + str(self.year).zfill(2) + '.jpeg')
+        self.map_path = load_path + '/' + self.season + str(self.year).zfill(2) + '.jpeg'
         self.order_resolver = OrderSolver(self.units_by_color, self.units_by_terr)
 
     def _season_step(self, retreat):
@@ -380,23 +389,35 @@ class AncientMediterranean:
                 flat.add(new_order)
         return flat
 
-    def game_step(self, admin, fp):
+    def _check_disbands(self):
+        for color, num in self.num_to_build.items():
+            if num < 0:
+                num_to_disband = abs(num) - len(self.orders[color])
+                if num_to_disband:
+                    raise AdministrativeException('{} still has to disband {} units'.format(color, num_to_disband))
+
+    def game_step(self, admin, save_path):
         if admin != self.admin:
             raise AdministrativeException("you aren't admin, imbecile")
         overview = ['overview of {} {}'.format(self.season, str(self.year).zfill(2))]
         # list out orders
-        for color in self.colors:  # TODO: make each player's orders appear in one line like color: order order order...
+        for color in self.colors:
             overview.append(
                 '{}: {}'.format(color, ', '.join([read_order(order) for order in self.orders[color].values()])))
         retreat = False
+        map_paths = []
         if self.season in {'spring', 'fall'}:
+            # add units and supply centers to move map before they're modified by the order resolver
+            move_map = generate_map(self.supply_centers_by_color, self.units_by_color)
             # move units to new territories and resolve conflicts
-            dislodged_units, standoffs, summary = self.order_resolver.resolve_normal_orders(
-                self._flatten_normal_orders())
+            dislodged_units, self.standoffs, successful_moves, failed_moves, summary = self.order_resolver. \
+                resolve_normal_orders(self._flatten_normal_orders())
+            # add moves from order resolver to move map and save
+            move_map = add_moves(move_map, successful_moves, failed_moves)
+            move_map.save(save_path + '/' + self.season + str(self.year).zfill(2) + '_move.jpeg')
+            map_paths.append(save_path + '/' + self.season + str(self.year).zfill(2) + '_move.jpeg')
             overview += summary
-            self.standoffs.clear()
-            for territory in standoffs:
-                self.standoffs.add(territory)
+            for territory in self.standoffs:
                 overview.append('standoff occurred in {}'.format(territory))
             # add dislodged units to retreating units
             for color in self.colors:
@@ -417,6 +438,7 @@ class AncientMediterranean:
             for units in self.retreating_units.values():
                 units.clear()
         elif self.season == 'build':
+            self._check_disbands()
             # add new and remove extra units
             overview += self.order_resolver.build_disband(self.orders)
 
@@ -432,20 +454,32 @@ class AncientMediterranean:
                 num_builds = num_supply_centers - num_units
                 self.num_to_build[color] = num_builds
                 if num_builds < 0:
-                    overview.append('{}: {} units to disband ({} supply centers {} units)'
-                                    .format(color, abs(num_builds), num_supply_centers, num_units))
+                    if num_builds == -1:
+                        overview.append('{}: 1 unit to disband ({} supply centers {} units)'
+                                        .format(color, num_supply_centers, num_units))
+                    else:
+                        overview.append('{}: {} units to disband ({} supply centers {} units)'
+                                        .format(color, abs(num_builds), num_supply_centers, num_units))
                 else:
-                    overview.append('{}: {} units to build ({} supply centers {} units)'
-                                    .format(color, num_builds, num_supply_centers, num_units))
+                    if num_builds == 1:
+                        overview.append('{}: 1 unit to build ({} supply centers {} units)'
+                                        .format(color, num_supply_centers, num_units))
+                    else:
+                        overview.append('{}: {} units to build ({} supply centers {} units)'
+                                        .format(color, num_builds, num_supply_centers, num_units))
 
         # reset orders
         for order_dict in self.orders.values():
             order_dict.clear()
         self._season_step(retreat)
-        self.save(fp)
+        new_map = generate_map(self.supply_centers_by_color, self.units_by_color)
+        new_map.save(save_path + '/' + self.season + str(self.year).zfill(2) + '.jpeg')
+        self.map_path = save_path + '/' + self.season + str(self.year).zfill(2) + '.jpeg'
+        map_paths.append(self.map_path)
+        self.save(save_path)
         overview.append('game state saved')
         overview.append('next phase is {} {}'.format(self.season, str(self.year).zfill(2)))
-        return '\n'.join(overview)
+        return '\n'.join(overview), map_paths
 
     def _update_supply_centers(self):
         # loop through each color's units and check if they took control of uncontrolled supply centers
@@ -793,6 +827,22 @@ class AncientMediterranean:
                 order_descriptions.append(read_order(order))
         return '\n'.join(order_descriptions)
 
+    def hold_rest(self, player):
+        color = self.get_color(player)
+        order_descriptions = []
+        if self.season in {'spring', 'fall'}:
+            for _, territory in self.units_by_color[color]:
+                if not self.orders[color].get(territory):
+                    self.orders[color][territory] = Order(territory, 'hold', None)
+                    order_descriptions.append('{} hold'.format(territory))
+            if not order_descriptions:
+                return "all of your units already have orders, dumbass"
+        elif self.season in {'spring_retreat', 'fall_retreat'}:
+            raise InvalidOrderException('cannot order units to halt in retreat phase')
+        elif self.season == 'build':
+            raise InvalidOrderException('cannot order units to halt in build phase')
+        return '\n'.join(order_descriptions)
+
     def get_my_units(self, player):
         color = self.get_color(player)
         units_str = []
@@ -800,12 +850,13 @@ class AncientMediterranean:
             units_str.append('{} {}'.format(*unit))
         if not units_str:
             return "you don't have any units, loser."
-        return '\n'.join(units_str)
+        return ', '.join(units_str)
 
     def get_all_units(self):
         unit_descriptions = []
         for color, units in self.units_by_color.items():
-            unit_descriptions += ['{} {} {}'.format(color, *unit) for unit in units]
+            unit_descriptions.append(
+                '{}: {} - {}'.format(color, len(units), ', '.join(['{} {}'.format(*unit) for unit in units])))
         if not unit_descriptions:
             return 'no units found (soren fucked up)'
         return '\n'.join(unit_descriptions)
@@ -813,9 +864,9 @@ class AncientMediterranean:
     def get_my_supply_centers(self, player):
         color = self.get_color(player)
         s = ' '.join(self.supply_centers_by_color[color])
-        if s == '':
-            return "you don't have any supply centers, stupid."
-        return s
+        if s:
+            return s
+        return "you don't have any supply centers, stupid."
 
     def get_all_supply_centers(self):
         s = []
@@ -844,7 +895,7 @@ class AncientMediterranean:
             self.players[color] = player
             return 'player {} assigned color {}'.format(player, color)
 
-    def remove_player(self, player):
+    def resign_player(self, player):
         if self.players_locked:
             raise AdministrativeException('players are locked by the admin')
         if not player_regex.match(player):
@@ -856,23 +907,23 @@ class AncientMediterranean:
             return 'you have been removed from control of {}'.format(color)
         except InvalidPlayerException:
             raise AdministrativeException(
-                'why are you trying to resign when you didnt control a color in the first place, you nitwit?')
+                "why are you trying to resign when you didn't control a color in the first place, you nitwit?")
 
-    def assign_admin(self, player):
-        if not player_regex.match(player):
+    def assign_admin(self, admin):
+        if not player_regex.match(admin):
             raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
-                                          '(yell at soren if you see this)'.format(player))
+                                          '(yell at soren if you see this)'.format(admin))
         if self.admin is None:
-            self.admin = player
-            return 'player {} assigned admin powers'.format(player)
+            self.admin = admin
+            return 'player {} assigned admin powers'.format(admin)
         raise AdministrativeException(
             'cannot assign admin powers until {} relinquishes admin powers with !relinquish_admin'.format(self.admin))
 
-    def relinquish_admin(self, player):
-        if not player_regex.match(player):
+    def relinquish_admin(self, admin):
+        if not player_regex.match(admin):
             raise AdministrativeException('invalid player {} must be of form AAAAA#0000\n'
-                                          '(yell at soren if you see this)'.format(player))
-        if player != self.admin:
+                                          '(yell at soren if you see this)'.format(admin))
+        if admin != self.admin:
             raise AdministrativeException(
                 "don't try and relinquish admin powers you don't have, dummy. current admin is {}".format(self.admin))
         self.admin = None
@@ -882,14 +933,14 @@ class AncientMediterranean:
             msg += ' players unlocked.'
         return msg
 
-    def lock_players(self, player):
-        if player != self.admin:
+    def lock_players(self, admin):
+        if admin != self.admin:
             raise AdministrativeException('locking players requires admin powers')
         self.players_locked = True
         return 'players locked'
 
-    def unlock_players(self, player):
-        if player != self.admin:
+    def unlock_players(self, admin):
+        if admin != self.admin:
             raise AdministrativeException('unlocking players requires admin powers')
         self.players_locked = False
         return 'players unlocked'
@@ -906,7 +957,7 @@ class AncientMediterranean:
         except InvalidPlayerException:
             raise AdministrativeException('you cant kick a player not assigned a color, moron')
 
-    def save(self, fp):
+    def save(self, save_path):
         def set_default(obj):
             if isinstance(obj, set):
                 return list(obj)
@@ -915,11 +966,11 @@ class AncientMediterranean:
         data = [self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr,
                 self.retreating_units, self.orders, self.num_to_build, self.supply_centers_by_color,
                 self.supply_centers_by_terr, self.season, self.year, self.standoffs]
-        with open(fp, 'w') as file:
+        with open(save_path + '.json', 'w') as file:
             json.dump(data, file, default=set_default)
 
-    def load(self, fp):
-        with open(fp, 'r') as file:
+    def load(self, load_path):
+        with open(load_path + '.json', 'r') as file:
             self.admin, self.players_locked, self.players, units_by_color, units_by_terr, retreating_units, orders, \
             self.num_to_build, supply_centers_by_color, self.supply_centers_by_terr, self.season, self.year, \
             standoffs = json.load(file)
@@ -945,7 +996,7 @@ class AncientMediterranean:
                     self.orders[color][territory] = Order(*order)
             self.standoffs = set(standoffs)
 
-    def override(self, admin, orders):
+    def override(self, admin, orders, save_path):
         if admin != self.admin:
             raise AdministrativeException("need admin powers to use override command")
         lines = orders.splitlines()
@@ -1085,7 +1136,11 @@ class AncientMediterranean:
         # build units last so newly built units don't over write units that were ordered to move elsewhere
         for unit_type, territory in builds:
             self.order_resolver.add_unit(color, unit_type, territory)
-        return '\n'.join(override_msg)
+        # generate new map based on changes
+        new_map = generate_map(self.supply_centers_by_color, self.units_by_color)
+        new_map.save(save_path + '/' + self.season + str(self.year).zfill(2) + '.jpeg')
+        self.map_path = save_path + '/' + self.season + str(self.year).zfill(2) + '.jpeg'
+        return '\n'.join(override_msg), self.map_path
 
     def set_season(self, admin, season):
         if admin != self.admin:

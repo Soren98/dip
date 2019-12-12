@@ -1,6 +1,8 @@
 import os
-from PIL import Image
+from cmath import polar, rect, pi
+from PIL import Image, ImageDraw
 
+# the bounding boxes of the supply center territories. used for coloring the territories in.
 supply_center_bounding_boxes = {'DAL': (240, 48, 328, 136), 'VIN': (231, 0, 271, 64), 'SIC': (224, 192, 272, 221),
                                 'CAR': (136, 200, 215, 240), 'JER': (527, 248, 551, 287), 'ALE': (384, 281, 494, 328),
                                 'THE': (488, 283, 580, 392), 'NEA': (233, 129, 296, 198), 'MEM': (394, 299, 512, 367),
@@ -14,6 +16,14 @@ supply_center_bounding_boxes = {'DAL': (240, 48, 328, 136), 'VIN': (231, 0, 271,
                                 'LEP': (216, 284, 328, 343), 'CIR': (120, 227, 181, 296), 'DAM': (543, 144, 611, 224),
                                 'SIP': (480, 88, 584, 143)}
 
+# the RGB values of the different colors
+palette = {
+    'red': (196, 143, 133),
+    'blue': (121, 175, 198),
+    'green': (164, 196, 153),
+    'black': (168, 126, 159),
+    'yellow': (234, 234, 175)}
+# tells where the upper left position of a unit in that territory should be
 unit_xys = {'GAU': (108, 31),
             'RHA': (195, 37),
             'SAM': (303, 40),
@@ -94,80 +104,156 @@ unit_xys = {'GAU': (108, 31),
             'REE': (546, 330),
             'BAL': (98, 146)}
 
-# # generate supply center bounding boxes and masks
-# for filename in os.listdir('ancient_mediterranean_maps/supply_center_territories'):
-#     if filename.endswith('.jpeg'):
-#         territory = filename[:3]
-#         if filename.find('.') != 3:
-#             continue
-#         territory = filename[:3]
-#         im = Image.open('ancient_mediterranean_maps/supply_center_territories/' + filename)
-#         bbox = im.getbbox()
-#         im = im.crop(bbox).convert(mode="1")
-#         im.save('ancient_mediterranean_maps/masks/' + territory + '.bmp')
-#         supply_center_bounding_boxes[territory.upper()] = bbox
-#  print(supply_center_bounding_boxes)
 
-palette = {
-    'red': (196, 143, 133),
-    'blue': (121, 175, 198),
-    'green': (164, 196, 153),
-    'black': (168, 126, 159),
-    'yellow': (234, 234, 175)}
-supply_center_colors = {'DAL': 'uncontrolled', 'VIN': 'red', 'SIC': 'uncontrolled', 'CAR': 'blue',
-                        'JER': 'uncontrolled', 'ALE': 'yellow', 'THE': 'yellow', 'NEA': 'red',
-                        'MEM': 'yellow', 'BYZ': 'uncontrolled', 'SAG': 'blue', 'NUM': 'uncontrolled',
-                        'CYR': 'yellow', 'MAC': 'green', 'SID': 'black', 'THA': 'blue',
-                        'PET': 'uncontrolled', 'BAL': 'uncontrolled', 'CRE': 'green', 'ROM': 'red',
-                        'ATH': 'green', 'SPA': 'green', 'MAS': 'red', 'RAV': 'red',
-                        'SAD': 'uncontrolled', 'ANT': 'black', 'TYE': 'black', 'CYP': 'black',
-                        'MIL': 'uncontrolled', 'CHE': 'uncontrolled', 'LEP': 'blue', 'CIR': 'blue',
-                        'DAM': 'black', 'SIP': 'black'}
-units_by_color = {'red': {('F', 'ADR'),
-                          ('A', 'DAL'),
-                          ('A', 'MAS'),
-                          ('F', 'MES'),
-                          ('F', 'SIC')},
-                  'blue': {('A', 'LEP'),
-                           ('F', 'PUN'),
-                           ('F', 'AEG'),
-                           ('F', 'BER'),
-                           ('A', 'MAU')},
-                  'green': {('A', 'MAC'),
-                            ('A', 'ATH'),
-                            ('F', 'CRE'),
-                            ('F', 'SPA')},
-                  'black': {('A', 'DAM'),
-                            ('A', 'TYE'),
-                            ('F', 'CYP'),
-                            ('F', 'CIL'),
-                            ('A', 'SIP'),
-                            ('A', 'ARA')},
-                  'yellow': {('A', 'SII'),
-                             ('F', 'CYR'),
-                             ('A', 'MEM'),
-                             ('A', 'PHA')}}
+# TODO: once current code is stable, change add_moves to add_orders which handles every type of order.
+#  the inputs are a list of orders and two sets for successful and failed orders. each order should have a different
+#  look. hold support can be a line like a move but with a perpendicular line on the end like the line used to draw a
+#  lineman's movements in football moves. convoyed moves can have a blue tinted line, but be the same as move.
+#  convoy orders should have a line meeting the line of the moving unit at a 90deg angle with a circle at the
+#  intersection. i'm not sure about move support or convoyed move support orders.
 
-blank = Image.open('ancient_mediterranean_maps/blank.jpeg').copy()
-# color supply center territories by owner
-for territory, bbox in supply_center_bounding_boxes.items():
-    owner = supply_center_colors[territory]
-    if owner == 'uncontrolled':
-        continue
-    color = palette[owner]
-    mask = Image.open('ancient_mediterranean_maps/masks/' + territory.lower() + '.bmp')
-    blank.paste(color, bbox, mask)
 
-# add units
-for color in units_by_color.keys():
-    for unit_type, territory in units_by_color[color]:
-        if unit_type == 'F':
-            unit = color + '_fleet.jpeg'
-        elif unit_type == 'A':
-            unit = color + '_army.jpeg'
-        else:
-            raise Exception('{} idk'.format(unit_type))
-        sprite = Image.open('ancient_mediterranean_maps/units/' + unit)
-        blank.paste(sprite, unit_xys[territory])
+def generate_bounding_boxes_and_masks(territories_fp='ancient_mediterranean_maps/supply_center_territories/',
+                                      masks_fp='ancient_mediterranean_maps/masks/'):
+    for filename in os.listdir(territories_fp):
+        if filename.endswith('.jpeg'):
+            territory = filename[:3]
+            if filename.find('.') != 3:
+                continue
+            territory = filename[:3]
+            im = Image.open(territories_fp + filename)
+            bbox = im.getbbox()
+            im = im.crop(bbox).convert(mode="1")
+            im.save(masks_fp + territory + '.bmp')
+            supply_center_bounding_boxes[territory.upper()] = bbox
+    print(supply_center_bounding_boxes)
+    # then you manually copy the printed dictionary to
 
-blank.show()
+
+def color_supply_centers(im, supply_centers_by_color):
+    # color supply center territories by owner
+    for color in supply_centers_by_color.keys():
+        for supply_center in supply_centers_by_color[color]:
+            bbox = supply_center_bounding_boxes[supply_center]
+            rgb = palette[color]
+            mask = Image.open('ancient_mediterranean_maps/masks/' + supply_center.lower() + '.bmp')
+            im.paste(rgb, bbox, mask)
+    return im
+
+
+def add_units(im, units_by_color):
+    # add units corresponding to their color and unit type
+    for color in units_by_color.keys():
+        for unit_type, territory in units_by_color[color]:
+            if unit_type == 'F':
+                unit = color + '_fleet.jpeg'
+            elif unit_type == 'A':
+                unit = color + '_army.jpeg'
+            else:
+                raise Exception('{} idk'.format(unit_type))
+            sprite = Image.open('ancient_mediterranean_maps/units/' + unit)
+            im.paste(sprite, unit_xys[territory])
+    return im
+
+
+def add_circularhead(draw, end_point, angle, fill):
+    offset = rect(4, angle)
+    end_point = (end_point[0] + offset.real, end_point[1] + offset.imag)
+    side_length = 4
+    bbox = (
+        end_point[0] - side_length, end_point[1] - side_length, end_point[0] + side_length, end_point[1] + side_length)
+    draw.chord(bbox, 0, 360, fill=fill)
+
+
+def add_archead(draw, end_point, angle, fill):
+    offset = rect(6, angle)
+    end_point = (end_point[0] + offset.real, end_point[1] + offset.imag)
+    side_length = 6
+    angle = angle * 180 / pi
+    bbox = (
+        end_point[0] - side_length, end_point[1] - side_length, end_point[0] + side_length, end_point[1] + side_length)
+    draw.chord(bbox, angle + 90, angle - 90, fill=fill)
+
+
+def add_flathead(draw, end_point, angle, fill):
+    side_length = 8
+    offset_angles = [pi / 2, -pi / 2]
+    offsets = [rect(side_length, angle + offset_angle) for offset_angle in offset_angles]
+    points = [(end_point[0] + offset.real, end_point[1] + offset.imag) for offset in offsets]
+    draw.line(points, fill=fill, width=5)
+
+
+def add_arrowhead(draw, end_point, angle, fill):
+    side_length = 6
+    offset_angles = [0, pi * 2 / 3, -pi * 2 / 3]
+    offsets = [rect(side_length, angle + offset_angle) for offset_angle in offset_angles]
+    points = [(end_point[0] + offset.real, end_point[1] + offset.imag) for offset in offsets]
+    draw.polygon(points, fill=fill)
+
+
+def add_arrow(draw, move, failed=False):
+    source_xy = [a + 9 for a in unit_xys[move[0]]]
+    destination_xy = [a + 9 for a in unit_xys[move[1]]]
+    mid = complex(destination_xy[0] - source_xy[0], destination_xy[1] - source_xy[1])
+    # the square units are wider near the edges. i calculate a multiplier which translates the length to the nearest
+    # edge, 9, to the distance to the edge at the line's angle. ex: a 45 degree line has a multiplier of root 2
+    ratio = min(abs(mid.real), abs(mid.imag)) / max(abs(mid.real), abs(mid.imag))
+    multiplier, _ = polar(complex(1.0, ratio))
+    distance, angle = polar(mid)
+    # shift line slightly (by 3) towards source to make up for the arrowhead's extra length
+    offset = min(9.0 * multiplier + 3, (distance - 12) / 2)
+    start_offset = rect(offset - 3, angle)
+    end_offset = rect(distance - offset - 3, angle)
+    start_point = (source_xy[0] + start_offset.real, source_xy[1] + start_offset.imag)
+    end_point = (source_xy[0] + end_offset.real, source_xy[1] + end_offset.imag)
+    fill = (0, 0, 0)
+    if failed:
+        fill = (100, 100, 100)
+    draw.line([start_point, end_point], fill=fill, width=5)
+    add_arrowhead(draw, end_point, angle, fill)
+
+
+def add_moves(im, successful_moves, failed_moves):
+    draw = ImageDraw.Draw(im)
+    for move in successful_moves:
+        add_arrow(draw, move)
+    for move in failed_moves:
+        add_arrow(draw, move, failed=True)
+    return im
+
+
+def generate_map(supply_centers_by_color, units_by_color, show=False):
+    blank = Image.open('ancient_mediterranean_maps/blank.jpeg')
+    blank = color_supply_centers(blank, supply_centers_by_color)
+    blank = add_units(blank, units_by_color)
+    if show:
+        blank.show()
+    return blank
+
+
+def generate_changes(supply_centers_by_color, units_by_color, successful_moves, failed_moves, show=False):
+    blank = generate_map(supply_centers_by_color, units_by_color)
+    blank = add_moves(blank, successful_moves, failed_moves)
+    if show:
+        blank.show()
+    return blank
+
+
+if __name__ == '__main__':
+    example_supply_centers_by_color = {'red': {'NEA', 'ROM', 'RAV', 'VIN', 'MAS'},
+                                       'blue': {'THA', 'CIR', 'CAR', 'SAG', 'LEP'},
+                                       'green': {'SPA', 'ATH', 'MAC', 'CRE'},
+                                       'black': {'SID', 'ANT', 'DAM', 'TYE', 'CYP', 'SIP'},
+                                       'yellow': {'ALE', 'MEM', 'THE', 'CYR'}}
+    example_units_by_color = {'red': {('F', 'ADR'), ('A', 'DAL'), ('A', 'MAS'), ('F', 'MES'), ('F', 'SIC')},
+                              'blue': {('A', 'LEP'), ('F', 'PUN'), ('F', 'AEG'), ('F', 'BER'), ('A', 'MAU')},
+                              'green': {('A', 'MAC'), ('A', 'ATH'), ('F', 'CRE'), ('F', 'SPA')},
+                              'black': {('A', 'DAM'), ('A', 'TYE'), ('F', 'CYP'), ('F', 'CIL'), ('A', 'SIP'),
+                                        ('A', 'ARA')},
+                              'yellow': {('A', 'SII'), ('F', 'CYR'), ('A', 'MEM'), ('A', 'PHA')}}
+    example_successful_moves = {('CIL', 'MIN'), ('AEG', 'MIL'), ('ADR', 'EPI'), ('MAC', 'BYZ'), ('ATH', 'MAC'),
+                                ('SPA', 'ATH'), ('CYP', 'EGY'), ('SIP', 'BIT'), ('LEP', 'MAR'), ('CYR', 'LEP'),
+                                ('RAV', 'ADR'), ('APU', 'ADR'), ('ADR', 'DAL')}
+    example_failed_moves = {('MAU', 'CIR'), ('PHA', 'CIR'), ('SIC', 'PUN'), ('TYE', 'JER'), ('SII', 'JER')}
+    generate_changes(example_supply_centers_by_color, example_units_by_color, example_successful_moves,
+                     example_failed_moves, show=True)

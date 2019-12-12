@@ -165,9 +165,9 @@ class OrderSolver:
     def __init__(self, units_by_color, units_by_terr):
         self.dislodged_units = {}
         self.standoffs = set()
-        self.successful_moves = set()
+        self.successful_attacks = set()
         self.dependent_moves = set()
-        self.failed_moves = set()
+        self.failed_attacks = set()
         self.orders_by_territory = {}
         self.move_destinations = {}
         self.convoys = {}
@@ -182,12 +182,16 @@ class OrderSolver:
         self.units_by_terr = units_by_terr
 
     def move_unit(self, source, destination):
+        if self.units_by_terr.get(destination):
+            self.remove_unit(destination)
         unit_type, color = self.units_by_terr.pop(source)
         self.units_by_terr[destination] = (unit_type, color)
         self.units_by_color[color].remove((unit_type, source))
         self.units_by_color[color].add((unit_type, destination))
 
     def add_unit(self, color, unit_type, territory):
+        if self.units_by_terr.get(territory):
+            self.remove_unit(territory)
         self.units_by_color[color].add((unit_type, territory))
         self.units_by_terr[territory] = (unit_type, color)
 
@@ -199,9 +203,15 @@ class OrderSolver:
         # move all units in moves by storing their color and unit type in a temporary dictionary,
         # removing the old units, then adding new units in their respective destinations
         temp_territories = {}
+        old_units_to_remove = set()
         for source, destination in moves:
             temp_territories[source] = self.units_by_terr[source]
             self.remove_unit(source)
+            old_units_to_remove.discard(source)
+            if self.units_by_terr.get(destination):
+                old_units_to_remove.add(destination)
+        for unit in old_units_to_remove:
+            self.remove_unit(unit)
         for source, destination in moves:
             unit_type, color = temp_territories[source]
             self.add_unit(color, unit_type, destination)
@@ -318,39 +328,39 @@ class OrderSolver:
             attacker = attacking_forces[0][1]
             if self.units_by_terr.get(territory) is None:
                 # lone attacker always moves into an unoccupied territory
-                self.successful_moves.add(attacker)
+                self.successful_attacks.add(attacker)
                 return attacker
             elif self._attack_dislodges(attacker, self.move_support[(attacker, territory)], territory,
                                         self.hold_support.get(territory, set())):
                 self.dislodged_units[territory] = (attacker, *self.units_by_terr[territory])
-                self.successful_moves.add(attacker)
+                self.successful_attacks.add(attacker)
                 return attacker
             elif self.orders_by_territory.get(territory, [None])[0] == 'move':
                 # attacker able to move in if the unit in territory successfully moves out
                 self.dependent_moves.add(attacker)
             else:
-                self.failed_moves.add(attacker)
+                self.failed_attacks.add(attacker)
         elif len(attacking_forces) > 1:
             sorted_attackers = sorted(attacking_forces, reverse=True)
             strongest = sorted_attackers[0][1]
             second_strongest = sorted_attackers[1][1]
             for attacker in sorted_attackers[1:]:
-                self.failed_moves.add(attacker[1])
+                self.failed_attacks.add(attacker[1])
             if self._attack_dislodges(strongest, self.move_support[(strongest, territory)], second_strongest,
                                       self.move_support[(second_strongest, territory)]):
                 if self.units_by_terr.get(territory) is None:
-                    self.successful_moves.add(strongest)
+                    self.successful_attacks.add(strongest)
                     return strongest
                 elif self._attack_dislodges(strongest, self.move_support[(strongest, territory)], territory,
                                             self.hold_support.get(territory, set())):
                     self.dislodged_units[territory] = (strongest, *self.units_by_terr[territory])
-                    self.successful_moves.add(strongest)
+                    self.successful_attacks.add(strongest)
                 elif self.orders_by_territory.get(territory, [None])[0] == 'move':
                     # strongest able to move in if the unit in territory successfully moves out
                     self.dependent_moves.add(strongest)
                 return strongest
             else:
-                self.failed_moves.add(strongest)
+                self.failed_attacks.add(strongest)
                 self.standoffs.add(territory)
         return None
 
@@ -420,9 +430,9 @@ class OrderSolver:
         # clear results of attacks evaluated when checking for successful convoys
         self.dislodged_units.clear()
         self.standoffs.clear()
-        self.successful_moves.clear()
+        self.successful_attacks.clear()
         self.dependent_moves.clear()
-        self.failed_moves.clear()
+        self.failed_attacks.clear()
 
         dependency_graph = self._generate_dependencies_graph()
         cycles, border_clashes = _find_cycles_and_border_clashes(dependency_graph, convoyed_moves)
@@ -439,13 +449,13 @@ class OrderSolver:
             # loser of clash fails its move
             # victor of clash only succeeds if it beat out other attackers (which was determined earlier)
             if clash_victor != 0:
-                self.successful_moves.discard(clash[0])
+                self.successful_attacks.discard(clash[0])
                 self.dependent_moves.discard(clash[0])
-                self.failed_moves.add(clash[0])
+                self.failed_attacks.add(clash[0])
             if clash_victor != 1:
-                self.successful_moves.discard(clash[1])
+                self.successful_attacks.discard(clash[1])
                 self.dependent_moves.discard(clash[1])
-                self.failed_moves.add(clash[1])
+                self.failed_attacks.add(clash[1])
         for territory in self.dependent_moves:
             if territory in success or territory in fail:
                 continue
@@ -454,10 +464,10 @@ class OrderSolver:
             while True:
                 cur_cycle.append(cur_terr)
                 cur_terr = dependency_graph[cur_terr]
-                if cur_terr in self.successful_moves:
+                if cur_terr in self.successful_attacks:
                     success.update(cur_cycle)
                     break
-                elif cur_terr in self.failed_moves:
+                elif cur_terr in self.failed_attacks:
                     fail.update(cur_cycle)
                     break
                 elif cur_terr in self.dependent_moves:
@@ -468,26 +478,32 @@ class OrderSolver:
                 else:
                     raise Exception('{} not in successful, failed, or dependent moves'.format(cur_terr))
         for s in success:
-            self.successful_moves.add(s)
+            self.successful_attacks.add(s)
         for f in fail:
-            self.failed_moves.add(f)
-        for s in self.successful_moves:
+            self.failed_attacks.add(f)
+        for s in self.successful_attacks:
             # units that successfully moved cannot be dislodged
             # an attacking unit being added to dislodged_units means it would be dislodged if it failed its attack
             self.dislodged_units.pop(s, None)
             resolve_summary.append('{} successfully moved to {}'.format(s, self.orders_by_territory[s][1]))
-        for f in self.failed_moves:
+        for f in self.failed_attacks:
             resolve_summary.append('{} failed to moved to {}'.format(f, self.orders_by_territory[f][1]))
         for convoy in self.convoys.keys():
             resolve_summary.append("{}'s convoy to {} was broken".format(*convoy))
 
         # make list of all successful moves for a mass move
-        moves = []
-        for territory in self.successful_moves:
-            destination = self.orders_by_territory[territory][1]
-            moves.append((territory, destination))
-        self.mass_move(moves)
-        return self.dislodged_units, self.standoffs, resolve_summary
+        successful_moves = []
+        for source in self.successful_attacks:
+            destination = self.orders_by_territory[source][1]
+            successful_moves.append((source, destination))
+        self.mass_move(successful_moves)
+        failed_moves = []
+        for source in self.failed_attacks:
+            destination = self.orders_by_territory[source][1]
+            failed_moves.append((source, destination))
+        for source, destination in self.convoys:
+            failed_moves.append((source, destination))
+        return self.dislodged_units, self.standoffs, successful_moves, failed_moves, resolve_summary
 
     def resolve_retreat_orders(self, orders):
         order_summary = []
@@ -506,7 +522,7 @@ class OrderSolver:
         for destination in self.move_destinations.keys():
             # if only one unit retreats to a territory, move it
             if len(self.move_destinations[destination]) == 1:
-                source, color, unit_type = self.move_destinations[destination][0]
+                source, color, unit_type = self.move_destinations[destination].pop()
                 order_summary.append('{} {} retreated from {} to {}'.format(color, unit_type, source, destination))
                 # add unit because retreating units aren't part of the normal game state, so they can't be moved
                 self.add_unit(color, unit_type, destination)
