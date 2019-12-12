@@ -1,6 +1,7 @@
+import re
+import json
 from copy import deepcopy
 from collections import namedtuple
-import re, json
 from order_resolver import OrderSolver
 
 territories = {'GAU', 'RHA', 'SAM', 'VIN', 'ILL', 'LUS', 'ARM', 'GAL', 'DAM', 'ARA', 'CIR', 'SAH', 'PHA', 'MAR', 'SAG',
@@ -284,26 +285,26 @@ class InvalidPlayerException(Exception):
 
 
 class AncientMediterranean:
-    admin = None
-    players_locked = False
-    players = {'red': None, 'blue': None, 'green': None, 'black': None, 'yellow': None}
-    units_by_color = {'red': [('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')],  # (unit type, territory)
-                      'blue': [('F', 'THA'), ('A', 'CIR'), ('A', 'CAR')],
-                      'green': [('F', 'SPA'), ('A', 'ATH'), ('A', 'MAC')],
-                      'black': [('F', 'SID'), ('A', 'ANT'), ('A', 'DAM')],
-                      'yellow': [('F', 'ALE'), ('A', 'MEM'), ('A', 'THE')]}
-    units_by_terr = {}  # (unit type, color)
-    retreating_units = {'red': {}, 'blue': {}, 'green': {}, 'black': {}, 'yellow': {}}  # (dislodging_unit, unit_type)
-    orders = {'red': {}, 'blue': {}, 'green': {}, 'black': {}, 'yellow': {}}  # (source, order type, ...)
-    num_to_build = {'red': 0, 'blue': 0, 'green': 0, 'black': 0, 'yellow': 0}
-    supply_centers_by_color = deepcopy(starting_supply_centers)
-    supply_centers_by_terr = {terr: 'uncontrolled' for terr in supply_center_territories}
-    season = 'spring'
-    year = 1
-    order_resolver = None
-    standoffs = set()
 
     def __init__(self, load_path=None):
+        self.admin = None
+        self.players_locked = False
+        self.players = {'red': None, 'blue': None, 'green': None, 'black': None, 'yellow': None}
+        self.units_by_color = {'red': [('F', 'NEA'), ('A', 'ROM'), ('A', 'RAV')],  # (unit type, territory)
+                               'blue': [('F', 'THA'), ('A', 'CIR'), ('A', 'CAR')],
+                               'green': [('F', 'SPA'), ('A', 'ATH'), ('A', 'MAC')],
+                               'black': [('F', 'SID'), ('A', 'ANT'), ('A', 'DAM')],
+                               'yellow': [('F', 'ALE'), ('A', 'MEM'), ('A', 'THE')]}
+        self.units_by_terr = {}  # (unit type, color)
+        self.retreating_units = {'red': {}, 'blue': {}, 'green': {}, 'black': {},
+                                 'yellow': {}}  # (dislodging_unit, unit_type)
+        self.orders = {'red': {}, 'blue': {}, 'green': {}, 'black': {}, 'yellow': {}}  # (source, order type, ...)
+        self.num_to_build = {'red': 0, 'blue': 0, 'green': 0, 'black': 0, 'yellow': 0}
+        self.supply_centers_by_color = deepcopy(starting_supply_centers)
+        self.supply_centers_by_terr = {terr: 'uncontrolled' for terr in supply_center_territories}
+        self.season = 'spring'
+        self.year = 1
+        self.standoffs = set()
         # add starting units to units_by_terr
         for color in self.units_by_color.keys():
             for unit in self.units_by_color[color]:
@@ -525,7 +526,7 @@ class AncientMediterranean:
         if territory not in territories:
             raise InvalidOrderException('territory {} unknown'.format(territory))
         # check if unit exists on the source territory and which color it is
-        if self.units_by_terr.get(territories) is None:
+        if self.units_by_terr.get(territory) is None:
             raise InvalidOrderException('territory {} unoccupied'.format(territory))
         actual_unit_type, actual_color = self.units_by_terr[territory]
         if unit_type != actual_unit_type:
@@ -547,7 +548,6 @@ class AncientMediterranean:
                                                                               actual_unit_type))
 
     def _interpret_order(self, order, color):
-        # print(order)
         match_move = move_regex.match(order)
         match_convoyed_move = convoyed_move_regex.match(order)
         match_hold = hold_regex.match(order)
@@ -767,7 +767,7 @@ class AncientMediterranean:
 
     def get_my_supply_centers(self, player):
         color = self.get_color(player)
-        s = '\n'.join(self.supply_centers_by_color[color])
+        s = ' '.join(self.supply_centers_by_color[color])
         if s == '':
             return "you don't have any supply centers, stupid."
         return s
@@ -775,7 +775,8 @@ class AncientMediterranean:
     def get_all_supply_centers(self):
         s = []
         for color, supply_centers in self.supply_centers_by_color.items():
-            s += ['{} {}'.format(color, supply_center) for supply_center in supply_centers]
+            s.append('{}: {} - {}'.format(color, len(self.supply_centers_by_color[color]),
+                                                         ' '.join(self.supply_centers_by_color[color])))
         if not s:
             return 'no supply centers found (soren fucked up)'
         return '\n'.join(s)
@@ -881,8 +882,8 @@ class AncientMediterranean:
             raise AdministrativeException("only admin can load over a live game")
         with open(fp, 'r') as file:
             self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr, \
-                self.retreating_units, self.orders, self.num_to_build, supply_centers_by_color, \
-                self.supply_centers_by_terr, self.season, self.year, standoffs = json.load(file)
+            self.retreating_units, self.orders, self.num_to_build, supply_centers_by_color, \
+            self.supply_centers_by_terr, self.season, self.year, standoffs = json.load(file)
             for color in self.supply_centers_by_color.keys():
                 self.supply_centers_by_color[color] = set(supply_centers_by_color[color])
             self.standoffs = set(standoffs)
@@ -901,6 +902,28 @@ class AncientMediterranean:
             raise AdministrativeException('invalid color {}'.format(color))
         override_msg = ['overriding {}'.format(color)]
         override_moves = set()
+        # disband units then move units first so they don't conflict with built units
+        for line in lines[1:]:
+            line = line.strip().upper()
+            try:
+                match_move = move_regex.match(line)
+                match_disband = disband_regex.match(line)
+
+                # move
+                if match_move:
+                    unit_type, source, destination = match_move.groups()
+                    self._check_ownership(source, unit_type, color)
+                    override_moves.add((source, destination))
+                    override_msg.append('{} at {} moved to {}'.format(unit_type, source, destination))
+                # disband
+                elif match_disband:
+                    unit_type, territory = match_disband.groups()
+                    self._check_ownership(territory, unit_type, color)
+                    self.order_resolver.remove_unit(territory)
+                    override_msg.append('{} in {} disbanded'.format(unit_type, territory))
+            except InvalidOrderException as e:
+                override_msg.append(str(e))
+        self.order_resolver.mass_move(override_moves)
         for line in lines[1:]:
             line = line.strip().upper()
             try:
@@ -914,30 +937,20 @@ class AncientMediterranean:
                 match_add_standoff = add_standoff_regex.match(line)
                 match_remove_standoff = remove_standoff_regex.match(line)
 
-                # move
-                if match_move:
-                    unit_type, source, destination = match_move.groups()
-                    self._check_ownership(source, unit_type, color)
-                    override_moves.add((source, destination))
-                    override_msg.append('{} at {} moved to {}'.format(unit_type, source, destination))
-
+                # move and disband handled in the earlier for loop
+                if match_move or match_disband:
+                    pass
                 # build
-                if match_build:
+                elif match_build:
                     unit_type, territory = match_build.groups()
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
+                    if self.units_by_terr.get(territory):
+                        raise InvalidOrderException('there is already a units in {}'.format(territory))
                     self.order_resolver.add_unit(color, unit_type, territory)
                     override_msg.append('{} added to {}'.format(unit_type, territory))
-
-                # disband
-                if match_disband:
-                    unit_type, territory = match_disband.groups()
-                    self._check_ownership(territory, unit_type, color)
-                    self.order_resolver.remove_unit(territory)
-                    override_msg.append('{} in {} disbanded'.format(unit_type, territory))
-
                 # add supply center
-                if match_add_sc:
+                elif match_add_sc:
                     territory = match_add_sc.groups()[0]
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
@@ -954,9 +967,8 @@ class AncientMediterranean:
                         self.supply_centers_by_color[old_color].remove(territory)
                     self.supply_centers_by_terr[territory] = color
                     self.supply_centers_by_color[color].add(territory)
-
                 # remove supply center
-                if match_remove_sc:
+                elif match_remove_sc:
                     territory = match_remove_sc.groups()[0]
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
@@ -970,10 +982,9 @@ class AncientMediterranean:
                     else:
                         raise InvalidOrderException(
                             "you didn't have control of the supply center of {}, blockhead".format(territory))
-
                 # TODO: are adding retreats and standoffs really necessary?
                 # add retreat
-                if match_add_retreat:
+                elif match_add_retreat:
                     unit_type, dislodged_unit, dislodging_unit = match_add_retreat
                     if dislodged_unit not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(dislodged_unit))
@@ -984,9 +995,8 @@ class AncientMediterranean:
                     self.retreating_units[color][dislodged_unit] = (dislodging_unit, unit_type)
                     override_msg.append('added {} {} retreating from {} that was dislodged by a unit attacking from {}'
                                         .format(color, unit_type, dislodged_unit, dislodging_unit))
-
                 # remove retreat
-                if match_remove_retreat:
+                elif match_remove_retreat:
                     territory = match_remove_retreat
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
@@ -994,27 +1004,24 @@ class AncientMediterranean:
                         raise InvalidOrderException('no unit retreating from {} to remove'.format(territory))
                     self.retreating_units[color].pop(territory)
                     override_msg.append('removed unit retreating from {} '.format(territory))
-
                 # add standoff
-                if match_add_standoff:
+                elif match_add_standoff:
                     territory = match_add_standoff.groups()
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
                     self.standoffs.add(territory)
                     override_msg.append('standoff added at {}'.format(territory))
-
                 # remove standoff
-                if match_remove_standoff:
+                elif match_remove_standoff:
                     territory = match_remove_standoff.groups()
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
                     self.standoffs.discard(territory)
                     override_msg.append('standoff removed from {}'.format(territory))
-
-                raise InvalidOrderException('order type not recognized')
+                else:
+                    raise InvalidOrderException('order type not recognized')
             except InvalidOrderException as e:
                 override_msg.append(str(e))
-        self.order_resolver.mass_move(override_moves)
         return '\n'.join(override_msg)
 
     def set_season(self, admin, season):

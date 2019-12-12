@@ -42,6 +42,8 @@ async def _focused(channel, author):
 async def on_message(msg):
     if msg.author == client.user:
         return
+    a = games
+    b = client
     auth = msg.author
     channel = str(msg.channel)
     print(str(auth))
@@ -70,30 +72,33 @@ async def on_message(msg):
                     "**a qqq b** to build a unit at a supply center in qqq\n"
                     "**f rrr d** to disband the unit in rrr\n"
                     "(orders and commands are not case sensitive)\n"
-                    "all units in diplomacy are referred to using three letter codes.\n"
-                    "this bot currently doesn't support use of the territories' full names (and probably never will).\n"
+                    "orders may only be submitted via DM (you wouldn't want others to see your orders after all)\n"
+                    "all units in diplomacy are referred to using three letter codes. this bot currently doesn't "
+                    "support use of the territories' full names (and probably never will).\n"
                     "**!more_help**: for a list of administrative commands use\n"
                     "**!admin help**: for admin only commands")
             elif line == '!more_help':
                 await auth.send(
                     "**!hello**: to greet the bot\n"
-                    "**!focus** <channel id>: to set your focus on that channel\n"
+                    "**!focus** <channel id>: to set your focus on that channel **DM ONLY**\n"
                     "your focus determines which game your DM commands affect.\n"
-                    "**!get_focus**: returns the name of the channel you're currently focused on\n"
+                    "**!get_focus**: returns the name of the channel you're currently focused on **DM ONLY**\n"
                     "**!assign** <color>: take control of one of the 5 colors (red, blue, green, black, and yellow)\n"
                     "**!resign**: removes you from the game (your units and supply centers remain unchanged)\n"
                     "**!my_units**: returns a list of your units\n"
                     "**!all_units**: returns a list of everyone's units\n"
                     "**!my_supply_centers**: returns a list of your supply centers\n"
                     "**!all_supply_centers**: returns a list of everyone's supply centers\n"
-                    "**!my_orders**: ofr a list of your units with their corresponding orders\n"
-                    "**!get** xxx: returns the order issued to the unit in xxx\n"
-                    "**!reset_orders**: removes all orders submitted this season\n"
+                    "**!my_orders**: ofr a list of your units with their corresponding orders **DM ONLY**\n"
+                    "**!get** xxx: returns the order issued to the unit in xxx **DM ONLY**\n"
+                    "**!reset_orders**: removes all orders submitted this season **DM ONLY**\n"
                     "**!admin**: use to claim admin power\n"
                     "**!relinquish_admin**: removes your admin power (why you would do this is beyond me)\n"
                     "use **!admin_help** for a list of admin only commands")
             elif line == '!admin_help':
                 await auth.send(
+                    "all admin commands are only usable in the text channels the game the commands are meant for. this "
+                    "is meant to stop admins from doing stuff behind the players' backs.\n"
                     "**!save**: saves current state\n"
                     "**!load**: loads game **admin power not required if there's no game in this channel**\n"
                     "**!lock_players**: stop players from claiming colors\n"
@@ -104,11 +109,11 @@ async def on_message(msg):
                     "**!set_season** <season>: self-explanatory\n"
                     "**!set_year** ##: ditto\n"
                     "**!clear_orders**: deletes all orders submitted by all players\n"
-                    "**!override** <color>: **ADMIN ONLY** all following lines in the message will be\n"
-                    "immediately resolved to adjust the game state of the specified color. moves can\n"
-                    "be move, build, or disband orders to modify color's units or special\n"
-                    "'add supply center' or 'remove supply center' orders that add and remove\n"
-                    "control of supply centers, respectively\n"
+                    "**!override** <color>: an override order is one message comprised of several lines. each line "
+                    "after the override command is equivalent to one order that is immediately resolved to adjust the "
+                    "game state of the specified color. orders can be move, build, or disband to modify <color>'s "
+                    "units or special 'add supply center' or 'remove supply center' orders to add and remove control "
+                    "of supply centers, respectively.\n"
                     "**add supply center sss** to take control of a supply center in sss\n"
                     "**remove supply center in ttt** to remove control of a supply center in ttt")
             elif line == '!hello':
@@ -120,17 +125,17 @@ async def on_message(msg):
                         for c in client.get_all_channels():
                             if focus_target == c.name:
                                 player_focus[auth] = focus_target
-                                await channel.send('focusing on {}'.format(focus_target))
+                                await auth.send('focusing on {}'.format(focus_target))
                         else:
-                            await channel.send('no channel named {} to focus on'.format(focus_target))
+                            await auth.send('no channel named {} to focus on'.format(focus_target))
                     else:
-                        await channel.send('there is no game associated with that channel.\n'
-                                           'use **!new_game** in a text channel to start one.')
+                        await auth.send('there is no game associated with that channel.\n'
+                                        'use **!new_game** in a text channel to start one.')
                 else:
                     await msg.channel.send('focus can only be changed in DMs')
             elif line.startswith('!get_focus'):
                 if _focused(msg.channel, auth):
-                    await msg.channel.send('focus is currently on {}'.format(player_focus[auth]))
+                    await auth.send('focus is currently on {}'.format(player_focus[auth]))
             elif line == '!new_game':
                 if isinstance(channel, DMChannel):
                     await channel.send('a new game cannot be started in a DM channel')
@@ -197,43 +202,43 @@ async def on_message(msg):
             elif line == '!my_units':
                 if isinstance(msg.channel, DMChannel):
                     if _focused(msg.channel, auth):
-                        await msg.channel.send(games[player_focus[auth]].get_my_units(str(auth)))
+                        await auth.send(games[player_focus[auth]].get_my_units(str(auth)))
                 else:
                     if await _valid_channel(msg.channel):
                         await msg.channel.send(games[channel].get_my_units(str(auth)))
             elif line == '!all_units':
                 if isinstance(msg.channel, DMChannel):
                     if _focused(msg.channel, auth):
-                        await msg.channel.send(games[player_focus[auth]].get_all_units())
+                        await auth.send(games[player_focus[auth]].get_all_units())
                 else:
                     if await _valid_channel(msg.channel):
                         await msg.channel.send(games[channel].get_all_units())
             elif line == '!my_supply_centers':
                 if isinstance(msg.channel, DMChannel):
                     if _focused(msg.channel, auth):
-                        await msg.channel.send(games[player_focus[auth]].get_my_supply_centers(str(auth)))
+                        await auth.send(games[player_focus[auth]].get_my_supply_centers(str(auth)))
                 else:
                     if await _valid_channel(msg.channel):
                         await msg.channel.send(games[channel].get_my_supply_centers(str(auth)))
             elif line == '!all_supply_centers':
                 if isinstance(msg.channel, DMChannel):
                     if _focused(msg.channel, auth):
-                        await msg.channel.send(games[player_focus[auth]].get_all_supply_centers())
+                        await auth.send(games[player_focus[auth]].get_all_supply_centers())
                 else:
                     if await _valid_channel(msg.channel):
                         await msg.channel.send(games[channel].get_all_supply_centers())
             elif line == '!my_orders':
                 if _focused(msg.channel, auth):
-                    await msg.channel.send(games[player_focus[auth]].get_my_orders(str(auth)))
+                    await auth.send(games[player_focus[auth]].get_my_orders(str(auth)))
             elif line.startswith('!get'):
                 if _focused(msg.channel, auth):
-                    await msg.channel.send(games[player_focus[auth]].get_order(str(auth), line[5:8].upper()))
-            elif line.startswith('!reset_orders'):
+                    await auth.send(games[player_focus[auth]].get_order(str(auth), line[5:8].upper()))
+            elif line == '!reset_orders':
                 if _focused(msg.channel, auth):
-                    await msg.channel.send(games[player_focus[auth]].reset_orders(str(auth)))
+                    await auth.send(games[player_focus[auth]].reset_orders(str(auth)))
             elif line[0:2] in {'a ', 'f '}:
                 if _focused(msg.channel, auth):
-                    await msg.channel.send(games[player_focus[auth]].add_order(str(auth), line))
+                    await auth.send(games[player_focus[auth]].add_order(str(auth), line))
         except (AdministrativeException, InvalidOrderException, InvalidPlayerException) as e:
             await msg.channel.send(str(e))
 

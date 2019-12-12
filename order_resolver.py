@@ -161,23 +161,21 @@ def _find_cycles_and_border_clashes(dependencies, convoyed_moves):
 
 
 class OrderSolver:
-    dislodged_units = {}
-    standoffs = set()
-    successful_moves = set()
-    dependent_moves = set()
-    failed_moves = set()
-    orders_by_territory = {}
-    move_destinations = {}
-    convoys = {}
-    hold_support = {}
-    move_support = {}
-    convoyed_move_support = {}
-    units_by_color = {}  # (unit type, territory)
-    units_by_terr = {}  # (unit type, color)
 
     def __init__(self, units_by_color, units_by_terr):
-        self.units_by_color = units_by_color
-        self.units_by_terr = units_by_terr
+        self.dislodged_units = {}
+        self.standoffs = set()
+        self.successful_moves = set()
+        self.dependent_moves = set()
+        self.failed_moves = set()
+        self.orders_by_territory = {}
+        self.move_destinations = {}
+        self.convoys = {}
+        self.hold_support = {}
+        self.move_support = {}
+        self.convoyed_move_support = {}
+        self.units_by_color = units_by_color  # (unit type, territory)
+        self.units_by_terr = units_by_terr  # (unit type, color)
 
     def update_unit_dicts(self, units_by_color, units_by_terr):
         self.units_by_color = units_by_color
@@ -202,7 +200,7 @@ class OrderSolver:
         # removing the old units, then adding new units in their respective destinations
         temp_territories = {}
         for source, destination in moves:
-            temp_territories[source] = self.units_by_terr
+            temp_territories[source] = self.units_by_terr[source]
             self.remove_unit(source)
         for source, destination in moves:
             unit_type, color = temp_territories[source]
