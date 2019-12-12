@@ -207,6 +207,7 @@ class OrderSolver:
             self.add_unit(color, unit_type, destination)
 
     def _sort_orders(self, orders):
+        summary = []
         # sort orders for ease of access
         self.orders_by_territory.clear()
         self.move_destinations.clear()
@@ -238,14 +239,19 @@ class OrderSolver:
                 if extra_info in self.convoys.keys():  # check if there's a unit to convoy
                     self.convoys[extra_info].add(source)
             elif order_type == 'support_hold':  # match supports to holds
-                # check if there's a unit to support and this unit's support wasn't cut
-                # it's also illegal to support a moving unit
+                if self._support_cut(source):
+                    summary.append("{}'s support cut".format(source))
+                    continue
+                # check if there's a unit to support. it's also illegal to support a moving unit
                 if extra_info in self.hold_support.keys() and self.orders_by_territory.get(extra_info, set())\
-                        not in {'move', 'convoyed_move'} and not self._support_cut(source):
+                        not in {'move', 'convoyed_move'}:
                     self.hold_support[extra_info].add(source)
             elif order_type == 'support_move':  # match supports to moves
-                # check if there's a move to support and this unit's support wasn't cut
-                if extra_info in self.move_support.keys() and not self._support_cut(source):
+                if self._support_cut(source):
+                    summary.append("{}'s support cut".format(source))
+                    continue
+                # check if there's a move to support
+                if extra_info in self.move_support.keys():
                     self.move_support[extra_info].add(source)
 
         # check which armies have a possible path of convoying fleets with which to convoy
@@ -258,18 +264,21 @@ class OrderSolver:
                 convoys_to_remove.add(convoy)
         # remove impossible convoys
         for convoy in convoys_to_remove:
+            summary.append("{}'s convoy to {} failed".format(*convoy))
             self.convoys.pop(convoy)
 
         # match supports to convoyed moves
         for source, order_type, extra_info in orders:
             if order_type == 'support_convoyed_move':
                 if self._support_cut(source):
+                    summary.append("{}'s support cut".format(source))
                     continue
                 if extra_info in self.convoyed_move_support.keys():
                     self.convoyed_move_support[extra_info].add(source)
                 # convoyed move can act as normal move if its destination is adjacent, so support the normal move too
                 if extra_info in self.move_support.keys():
                     self.move_support.get(extra_info).add(source)
+        return summary
 
     def _support_cut(self, supporter):
         order_type, extra_info = self.orders_by_territory[supporter]
@@ -384,7 +393,7 @@ class OrderSolver:
 
     def resolve_normal_orders(self, orders):
         resolve_summary = []
-        self._sort_orders(orders)
+        resolve_summary += self._sort_orders(orders)
 
         # check which convoys succeed by checking if each of their convoying fleets is dislodged or not
         # when a convoy succeed, check if it cuts the support at its destination.
@@ -404,6 +413,7 @@ class OrderSolver:
                 self.move_support[(source, destination)] = self.convoyed_move_support[convoy]
                 # check if the newly successful convoy cuts any support given by a unit at its destination
                 if self.units_by_terr.get(destination) is not None and self._support_cut(destination):
+                    resolve_summary.append("{}'s support cut".format(destination))
                     new_support_cut = True
 
         # clear results of attacks evaluated when checking for successful convoys

@@ -235,9 +235,11 @@ support_move_regex = re.compile('^([AF]) +(\w{3}) +S +(\w{3})-(\w{3})$')
 support_convoyed_move_regex = re.compile('^([AF]) +(\w{3}) +S +(\w{3})-(\w{3}) +VIA +CONVOY$')
 build_regex = re.compile('^([AF]) +(\w{3}) +B$')
 disband_regex = re.compile('^([AF]) +(\w{3}) +D$')
-
 add_supply_center_regex = re.compile('^ADD +SUPPLY +CENTER +(\w{3})$')
 remove_supply_center_regex = re.compile('^REMOVE +SUPPLY +CENTER +(\w{3})$')
+set_season_regex = re.compile('^SET +SEASON +(\w+)$')
+set_year_regex = re.compile('^SET +YEAR +(\d+)$')
+
 add_retreat_regex = re.compile('^([AF]) +(\w{3}) RETREAT +(\w{3})$')
 remove_retreat_regex = re.compile('^REMOVE +RETREAT +(\w{3})$')
 add_standoff_regex = re.compile('^ADD +STANDOFF +(\w{3})$')
@@ -285,7 +287,6 @@ class InvalidPlayerException(Exception):
 
 
 class AncientMediterranean:
-
     def __init__(self, load_path=None):
         self.admin = None
         self.players_locked = False
@@ -315,7 +316,7 @@ class AncientMediterranean:
                 self.supply_centers_by_terr[sc] = color
         self.order_resolver = OrderSolver(self.units_by_color, self.units_by_terr)
         if load_path:
-            self.load(self.admin, load_path)
+            self.load(load_path)
 
     def _season_step(self, retreat):
         if self.season == 'build':
@@ -338,9 +339,7 @@ class AncientMediterranean:
                             'valid seasons are {}'.format(self.season, valid_seasons))
         return self.season + ' ' + str(self.year)
 
-    def orders_status(self, admin):
-        if admin != self.admin:
-            raise AdministrativeException("you aren't admin, doofus")
+    def status(self):
         ret_str = []
         if self.season in {'spring', 'fall'}:
             for color in self.units_by_color.keys():
@@ -369,7 +368,7 @@ class AncientMediterranean:
                 flat.add(order)
         return flat
 
-    def game_step(self, admin, fp):
+    def game_step(self, admin):
         if admin != self.admin:
             raise AdministrativeException("you aren't admin, imbecile")
         overview = ['overview of {} {}'.format(self.season, self.year)]
@@ -417,7 +416,6 @@ class AncientMediterranean:
         for order_dict in self.orders.values():
             order_dict.clear()
         self._season_step(retreat)
-        self.save(self.admin, fp)
         overview.append('game state saved')
         overview.append('next phase is {} {}'.format(self.season, self.year))
         return '\n'.join(overview)
@@ -861,10 +859,7 @@ class AncientMediterranean:
         except InvalidPlayerException:
             raise AdministrativeException('you cant kick a player not assigned a color, moron')
 
-    def save(self, admin, fp):
-        if admin != self.admin:
-            raise AdministrativeException("only admin can load over a live game")
-
+    def save(self, fp):
         def set_default(obj):
             if isinstance(obj, set):
                 return list(obj)
@@ -875,11 +870,8 @@ class AncientMediterranean:
                 self.supply_centers_by_terr, self.season, self.year, self.standoffs]
         with open(fp, 'w') as file:
             json.dump(data, file, default=set_default)
-        return 'game state saved'
 
-    def load(self, admin, fp):
-        if admin != self.admin:
-            raise AdministrativeException("only admin can load over a live game")
+    def load(self, fp):
         with open(fp, 'r') as file:
             self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr, \
             self.retreating_units, self.orders, self.num_to_build, supply_centers_by_color, \
@@ -888,8 +880,6 @@ class AncientMediterranean:
                 self.supply_centers_by_color[color] = set(supply_centers_by_color[color])
             self.standoffs = set(standoffs)
             self.order_resolver.update_unit_dicts(self.units_by_color, self.units_by_terr)
-            self._clear_orders()
-        return 'game state loaded'
 
     def override(self, admin, orders):
         if admin != self.admin:
@@ -902,28 +892,7 @@ class AncientMediterranean:
             raise AdministrativeException('invalid color {}'.format(color))
         override_msg = ['overriding {}'.format(color)]
         override_moves = set()
-        # disband units then move units first so they don't conflict with built units
-        for line in lines[1:]:
-            line = line.strip().upper()
-            try:
-                match_move = move_regex.match(line)
-                match_disband = disband_regex.match(line)
-
-                # move
-                if match_move:
-                    unit_type, source, destination = match_move.groups()
-                    self._check_ownership(source, unit_type, color)
-                    override_moves.add((source, destination))
-                    override_msg.append('{} at {} moved to {}'.format(unit_type, source, destination))
-                # disband
-                elif match_disband:
-                    unit_type, territory = match_disband.groups()
-                    self._check_ownership(territory, unit_type, color)
-                    self.order_resolver.remove_unit(territory)
-                    override_msg.append('{} in {} disbanded'.format(unit_type, territory))
-            except InvalidOrderException as e:
-                override_msg.append(str(e))
-        self.order_resolver.mass_move(override_moves)
+        builds = []
         for line in lines[1:]:
             line = line.strip().upper()
             try:
@@ -932,14 +901,19 @@ class AncientMediterranean:
                 match_disband = disband_regex.match(line)
                 match_add_sc = add_supply_center_regex.match(line)
                 match_remove_sc = remove_supply_center_regex.match(line)
+                match_set_season = set_season_regex.match(line)
+                match_set_year = set_year_regex.match(line)
                 match_add_retreat = add_retreat_regex.match(line)
                 match_remove_retreat = remove_retreat_regex.match(line)
                 match_add_standoff = add_standoff_regex.match(line)
                 match_remove_standoff = remove_standoff_regex.match(line)
 
-                # move and disband handled in the earlier for loop
-                if match_move or match_disband:
-                    pass
+                # move
+                if match_move:
+                    unit_type, source, destination = match_move.groups()
+                    self._check_ownership(source, unit_type, color)
+                    override_moves.add((source, destination))
+                    override_msg.append('{} at {} moved to {}'.format(unit_type, source, destination))
                 # build
                 elif match_build:
                     unit_type, territory = match_build.groups()
@@ -947,8 +921,15 @@ class AncientMediterranean:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
                     if self.units_by_terr.get(territory):
                         raise InvalidOrderException('there is already a units in {}'.format(territory))
-                    self.order_resolver.add_unit(color, unit_type, territory)
+                    # add to list to build later, because building now could conflict with moving units
+                    builds.append((unit_type, territory))
                     override_msg.append('{} added to {}'.format(unit_type, territory))
+                # disband
+                elif match_disband:
+                    unit_type, territory = match_disband.groups()
+                    self._check_ownership(territory, unit_type, color)
+                    self.order_resolver.remove_unit(territory)
+                    override_msg.append('{} in {} disbanded'.format(unit_type, territory))
                 # add supply center
                 elif match_add_sc:
                     territory = match_add_sc.groups()[0]
@@ -982,6 +963,20 @@ class AncientMediterranean:
                     else:
                         raise InvalidOrderException(
                             "you didn't have control of the supply center of {}, blockhead".format(territory))
+                elif match_set_season:
+                    season = match_set_season.groups()[0]
+                    if season not in valid_seasons:
+                        raise AdministrativeException('invalid season {}\n'
+                                                      'valid seasons are {}'.format(season, valid_seasons))
+                    self.season = season
+                    override_msg.append('season set to {}'.format(season))
+                elif match_set_year:
+                    year = match_set_season.groups()[0]
+                    if len(year) != 2 or not year.isdigit:
+                        raise AdministrativeException(
+                            'year must be a two digit number. your input: {}'.format(year))
+                    self.year = int(year)
+                    override_msg.append('year set to {}'.format(year))
                 # TODO: are adding retreats and standoffs really necessary?
                 # add retreat
                 elif match_add_retreat:
@@ -1022,6 +1017,10 @@ class AncientMediterranean:
                     raise InvalidOrderException('order type not recognized')
             except InvalidOrderException as e:
                 override_msg.append(str(e))
+        self.order_resolver.mass_move(override_moves)
+        # build units last so newly built units don't over write units that were ordered to move elsewhere
+        for unit_type, territory in builds:
+            self.order_resolver.add_unit(color, unit_type, territory)
         return '\n'.join(override_msg)
 
     def set_season(self, admin, season):
@@ -1041,12 +1040,9 @@ class AncientMediterranean:
         self.year = int(year)
         return 'year set to {}'.format(year)
 
-    def _clear_orders(self):
-        for color in self.orders.keys():
-            self.orders[color].clear()
-
     def clear_orders(self, admin):
         if admin != self.admin:
             raise AdministrativeException('need admin powers to clear all orders')
-        self._clear_orders()
+        for color in self.orders.keys():
+            self.orders[color].clear()
         return 'all orders cleared'
