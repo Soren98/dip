@@ -179,6 +179,10 @@ class OrderSolver:
         self.units_by_color = units_by_color
         self.units_by_terr = units_by_terr
 
+    def update_unit_dicts(self, units_by_color, units_by_terr):
+        self.units_by_color = units_by_color
+        self.units_by_terr = units_by_terr
+
     def move_unit(self, source, destination):
         unit_type, color = self.units_by_terr.pop(source)
         self.units_by_terr[destination] = (unit_type, color)

@@ -303,7 +303,7 @@ class AncientMediterranean:
     order_resolver = None
     standoffs = set()
 
-    def __init__(self):
+    def __init__(self, load_path=None):
         # add starting units to units_by_terr
         for color in self.units_by_color.keys():
             for unit in self.units_by_color[color]:
@@ -313,6 +313,8 @@ class AncientMediterranean:
             for sc in self.supply_centers_by_color[color]:
                 self.supply_centers_by_terr[sc] = color
         self.order_resolver = OrderSolver(self.units_by_color, self.units_by_terr)
+        if load_path:
+            self.load(self.admin, load_path)
 
     def _season_step(self, retreat):
         if self.season == 'build':
@@ -366,7 +368,7 @@ class AncientMediterranean:
                 flat.add(order)
         return flat
 
-    def game_step(self, admin):
+    def game_step(self, admin, fp):
         if admin != self.admin:
             raise AdministrativeException("you aren't admin, imbecile")
         overview = ['overview of {} {}'.format(self.season, self.year)]
@@ -414,6 +416,8 @@ class AncientMediterranean:
         for order_dict in self.orders.values():
             order_dict.clear()
         self._season_step(retreat)
+        self.save(self.admin, fp)
+        overview.append('game state saved')
         overview.append('next phase is {} {}'.format(self.season, self.year))
         return '\n'.join(overview)
 
@@ -688,13 +692,12 @@ class AncientMediterranean:
                 return c
         raise InvalidPlayerException('invalid player {}. assign color before issuing orders'.format(player))
 
-    def add_order(self, player, order):
+    def add_order(self, player, order_str):
         color = self.get_color(player)
-        order = self._interpret_order(order, color)
+        order = self._interpret_order(order_str.strip().upper(), color)
         if not isinstance(order, Order):
             raise InvalidOrderException('order "{}" not of type Order. yell at soren to fix.'.format(order))
-        territory = order.source
-        self.orders[color][territory] = order
+        self.orders[color][order.source] = order
         return read_order(order)
 
     def reset_orders(self, player):
@@ -857,7 +860,10 @@ class AncientMediterranean:
         except InvalidPlayerException:
             raise AdministrativeException('you cant kick a player not assigned a color, moron')
 
-    def save(self, fp):
+    def save(self, admin, fp):
+        if admin != self.admin:
+            raise AdministrativeException("only admin can load over a live game")
+
         def set_default(obj):
             if isinstance(obj, set):
                 return list(obj)
@@ -866,18 +872,23 @@ class AncientMediterranean:
         data = [self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr,
                 self.retreating_units, self.orders, self.num_to_build, self.supply_centers_by_color,
                 self.supply_centers_by_terr, self.season, self.year, self.standoffs]
-        with open('diplomacy_' + fp + '.json', 'w') as file:
+        with open(fp, 'w') as file:
             json.dump(data, file, default=set_default)
+        return 'game state saved'
 
-    def load(self, fp):
-        with open('diplomacy_' + fp + '.json', 'r') as file:
+    def load(self, admin, fp):
+        if admin != self.admin:
+            raise AdministrativeException("only admin can load over a live game")
+        with open(fp, 'r') as file:
             self.admin, self.players_locked, self.players, self.units_by_color, self.units_by_terr, \
-                self.retreating_units, self.orders, self.num_to_build, self.supply_centers_by_color, \
-                self.supply_centers_by_terr, self.season, self.year, self.standoffs = json.load(file)
+                self.retreating_units, self.orders, self.num_to_build, supply_centers_by_color, \
+                self.supply_centers_by_terr, self.season, self.year, standoffs = json.load(file)
             for color in self.supply_centers_by_color.keys():
-                self.supply_centers_by_color[color] = set(self.supply_centers_by_color[color])
-            self.standoffs = set(self.standoffs)
-            self.order_resolver = OrderSolver(self.units_by_color, self.units_by_terr)
+                self.supply_centers_by_color[color] = set(supply_centers_by_color[color])
+            self.standoffs = set(standoffs)
+            self.order_resolver.update_unit_dicts(self.units_by_color, self.units_by_terr)
+            self._clear_orders()
+        return 'game state loaded'
 
     def override(self, admin, orders):
         if admin != self.admin:
@@ -885,13 +896,13 @@ class AncientMediterranean:
         lines = orders.splitlines()
         if len(lines) == 1:
             raise AdministrativeException('all overriding orders must be submitted on separate lines in one message')
-        color = lines[0]
+        color = lines[0].strip().lower()
         if color not in self.players.keys():
             raise AdministrativeException('invalid color {}'.format(color))
         override_msg = ['overriding {}'.format(color)]
         override_moves = set()
         for line in lines[1:]:
-            line = line.upper()
+            line = line.strip().upper()
             try:
                 match_move = move_regex.match(line)
                 match_build = build_regex.match(line)
@@ -927,7 +938,7 @@ class AncientMediterranean:
 
                 # add supply center
                 if match_add_sc:
-                    territory = match_add_sc.groups()
+                    territory = match_add_sc.groups()[0]
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
                     if territory not in supply_center_territories:
@@ -946,7 +957,7 @@ class AncientMediterranean:
 
                 # remove supply center
                 if match_remove_sc:
-                    territory = match_remove_sc.groups()
+                    territory = match_remove_sc.groups()[0]
                     if territory not in territories:
                         raise InvalidOrderException('territory {} unknown'.format(territory))
                     if territory not in supply_center_territories:
@@ -1023,9 +1034,12 @@ class AncientMediterranean:
         self.year = int(year)
         return 'year set to {}'.format(year)
 
+    def _clear_orders(self):
+        for color in self.orders.keys():
+            self.orders[color].clear()
+
     def clear_orders(self, admin):
         if admin != self.admin:
             raise AdministrativeException('need admin powers to clear all orders')
-        for color in self.orders.keys():
-            self.orders[color].clear()
+        self._clear_orders()
         return 'all orders cleared'
