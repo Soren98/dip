@@ -93,7 +93,7 @@ async def on_message(msg):
                     "'add supply center' or 'remove supply center' orders that add and remove\n"
                     "control of supply centers, respectively")
             elif line == '!hello':
-                await msg.channel.send('Fuck off {}, ya cunt!\n'.format(str(games[channel].get_players())))
+                await msg.channel.send('Fuck off {}, ya cunt!\n'.format(auth))
             elif line == '!save':
                 if channel not in games.keys():
                     await channel.send('there is no game associated with this channel to save')
